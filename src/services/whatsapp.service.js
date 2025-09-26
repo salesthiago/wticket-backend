@@ -1,0 +1,804 @@
+import { create, Whatsapp } from "@wppconnect-team/wppconnect";
+import logger from "../utils/logger.js";
+import sessionRepository from "../repositories/session.repository.js";
+import ticketRepository from "../repositories/ticket.repository.js";
+import syncService from "../services/sync.service.js";
+
+class WhatsAppService {
+  constructor() {
+    this.sessions = new Map();
+    this.io = null;
+    this.clients = new Map();
+  }
+
+  setSocketIO(io) {
+    this.io = io;
+    console.log("setSocketIO iniciado com sucesso");
+  }
+
+  async initializeFromDatabase() {
+    try {
+      logger.info("Inicializando sessões do banco de dados...");
+      const dbSessions = await sessionRepository.findAll();
+
+      for (const dbSession of dbSessions) {
+        if (dbSession.status === "connected") {
+          logger.info("Tentando restaurar sessão conectada", dbSession.name);
+          try {
+            const client = await this.createSession(dbSession.name, true);
+
+            if (client) {
+              this.clients.set(dbSession.name, client);
+              logger.info(
+                `Cliente da sessão ${dbSession.name} restaurado com sucesso`
+              );
+              await this.syncUnreadMessages(dbSession.name, client);
+            }
+          } catch (error) {
+            logger.error("Erro ao restaurar sessão " + dbSession.name, error);
+            // Atualiza status quando falhar
+            await sessionRepository.updateStatus(dbSession.name, "failed");
+          }
+        }
+      }
+    } catch (error) {
+      logger.error("Erro ao inicializar do banco de dados:", error);
+    }
+  }
+
+  async createSession(sessionName, isReconnect = false) {
+    try {
+      logger.info(`Criando sessão: ${sessionName}`);
+
+      // 🔥 SOLUÇÃO: Usar nome temporário para evitar conflito de userDataDir
+      let actualSessionName = sessionName;
+      let tempSessionName = null;
+
+      if (isReconnect) {
+        tempSessionName = `${sessionName}_reconnect_${Date.now()}`;
+        actualSessionName = tempSessionName;
+        logger.info(
+          `Usando nome temporário para reconexão: ${tempSessionName}`
+        );
+      }
+
+      // Salva no banco de dados com o nome REAL (não o temporário)
+      await sessionRepository.updateOrCreate(sessionName, {
+        name: actualSessionName,
+        status: "initializing",
+        lastActivity: new Date(),
+      });
+
+      this.sessions.set(sessionName, {
+        client: null,
+        status: "initializing",
+        qrCode: null,
+      });
+
+      const client = await create({
+        // 🔥 Usar o nome temporário para a sessão do Puppeteer
+        session: actualSessionName,
+        catchQR: (base64Qr, asciiQR, attempts, urlCode) => {
+          logger.info("QR Code recebido");
+          console.log(
+            "🚀 base64Qr (primeiros 50 chars):",
+            base64Qr?.substring(0, 50)
+          );
+          console.log("📌 urlCode:", urlCode);
+
+          // Salva QR code no banco com o nome REAL
+          sessionRepository.updateOrCreate(sessionName, {
+            qrCode: base64Qr,
+            status: "awaiting_qr",
+          });
+
+          this.emitQRCode(sessionName, base64Qr);
+        },
+        statusFind: (statusSession, session) => {
+          logger.info(">>>>>>>>>>>> statusFind <<<<<<<<<<<<");
+          logger.info(`Status da sessão ${sessionName}: ${statusSession}`);
+
+          // Atualiza status no banco com nome REAL
+          sessionRepository.updateStatus(sessionName, statusSession);
+
+          this.emitStatus(sessionName, statusSession);
+        },
+        onLoadingScreen: (percent, message) => {
+          logger.info(`Carregando: ${percent}% - ${message}`);
+          this.emitLoading(sessionName, percent, message);
+        },
+        headless: true,
+        devtools: false,
+        useChrome: true,
+        debug: false,
+        logQR: true,
+        browserArgs: [
+          "--no-sandbox",
+          "--disable-setuid-sandbox",
+          "--disable-dev-shm-usage",
+          "--disable-accelerated-2d-canvas",
+          "--no-first-run",
+          "--no-zygote",
+          "--single-process",
+          "--disable-gpu",
+        ],
+      });
+
+      client.onStateChange(async (state) => {
+        logger.info(">>>>>>> onStateChange <<<<<<<");
+        logger.info(`Estado da sessão ${sessionName}: ${state}`);
+
+        // Atualiza estado no banco com nome REAL
+        sessionRepository.updateStatus(sessionName, state);
+
+        this.emitStateChange(sessionName, state);
+
+        if (state === "CONFLICT" || state === "UNLAUNCHED") {
+          client.useHere();
+        }
+        if (state == "CONNECTED") {
+          logger.info(`Sessão ${sessionName} conectada com sucesso!`);
+          this.clients.set(sessionName, client);
+
+          // 🔥 IMPORTANTE: Se foi reconexão, renomear a pasta de volta
+          if (isReconnect && tempSessionName) {
+            this.renameSessionFolder(tempSessionName, sessionName);
+          }
+
+          console.log(`✅ Cliente conectado: ${client.isConnected()}`);
+          console.log(
+            `✅ Cliente adicionado ao mapa: ${this.clients.has(sessionName)}`
+          );
+
+          await sessionRepository.updateOrCreate(sessionName, {
+            status: "connected",
+            lastActivity: new Date(),
+            qrCode: null,
+          });
+          this.emitSuccess(sessionName, "Sessão conectada com sucesso!");
+        }
+      });
+
+      client.on("connected", async () => {
+        logger.info(
+          `Sessão cliente.on >>>>> ${sessionName} conectada com sucesso.`
+        );
+        await this.syncUnreadMessages(sessionName, client);
+      });
+
+      return client;
+    } catch (error) {
+      logger.error(`Erro ao criar sessão ${sessionName}:`, error);
+      throw error;
+    }
+  }
+
+  async syncUnreadMessages(sessionName, client) {
+    try {
+      logger.info(
+        `🔍 Sincronizando mensagens não lidas para a sessão: ${sessionName}`
+      );
+
+      const unreadMessages = await client.getAllUnreadMessages();
+      logger.info(
+        `📥 Encontradas ${unreadMessages.length} mensagens não lidas.`
+      );
+
+      for (const message of unreadMessages) {
+        await syncService.processMessage(sessionName, message);
+      }
+      logger.info(
+        `✅ Sincronização de mensagens não lidas concluída para: ${sessionName}`
+      );
+    } catch (error) {
+      logger.error(
+        `❌ Erro ao sincronizar mensagens não lidas para ${sessionName}:`,
+        error
+      );
+    }
+  }
+
+  renameSessionFolder(oldName, newName) {
+    try {
+      const fs = require("fs").promises;
+      const path = require("path");
+
+      const tokensDir = path.join(process.cwd(), "tokens");
+      const oldPath = path.join(tokensDir, oldName);
+      const newPath = path.join(tokensDir, newName);
+
+      if (fs.existsSync(oldPath)) {
+        fs.renameSync(oldPath, newPath);
+        logger.info(`Pasta da sessão renomeada de ${oldName} para ${newName}`);
+      }
+    } catch (error) {
+      logger.warn(
+        `Não foi possível renomear pasta da sessão: ${error.message}`
+      );
+    }
+  }
+
+  async syncContacts(sessionName) {
+    try {
+      console.log(`🔍 Procurando cliente para sessão: ${sessionName}`);
+      console.log(
+        `🔍 Chaves no mapa de clients:`,
+        Array.from(this.clients.keys())
+      );
+
+      const client = this.clients.get(sessionName);
+      if (!client) {
+        console.log(`❌ Cliente não encontrado para: ${sessionName}`);
+        throw new Error("Sessão não encontrada ou não conectada");
+      }
+
+      console.log(`✅ Cliente encontrado, conectado: ${client.isConnected()}`);
+      return await syncService.syncContacts(sessionName, client);
+    } catch (error) {
+      logger.error(`Erro ao sincronizar contatos:`, error);
+      throw error;
+    }
+  }
+
+  async syncMessages(sessionName, contactNumber = null) {
+    try {
+      const client = this.clients.get(sessionName);
+      if (!client || !client.isConnected()) {
+        logger.warn(
+          `Não foi possível sincronizar mensagens para ${sessionName}: cliente não conectado.`
+        );
+        // Lança um erro ou retorna um objeto que indica a falha
+        throw new Error("Sessão não encontrada ou não conectada");
+      }
+      logger.info(
+        `seguindo para sincronizar mensagens da sessao ${sessionName}.`
+      );
+      if (typeof client.isConnected === "function" && !client.isConnected()) {
+        logger.warn(
+          `Cliente ${sessionName} não está conectado. Tentando reconectar...`
+        );
+        await this.reconnectSession(sessionName);
+        return await this.syncMessages(sessionName, contactNumber);
+      }
+
+      logger.info(
+        `Seguindo para sincronizar mensagens da sessão ${sessionName}.`
+      );
+      return await syncService.syncMessages(sessionName, client, contactNumber);
+    } catch (error) {
+      logger.error(`Erro ao sincronizar mensagens:`, error);
+
+      // Se for erro de método não encontrado, tenta abordagem alternativa
+      if (error.message.includes("is not a function")) {
+        logger.warn(`Método não disponível, tentando abordagem alternativa...`);
+        return await this.syncMessagesAlternative(sessionName, contactNumber);
+      }
+
+      throw error;
+    }
+  }
+
+  async syncMessagesAlternative(sessionName, contactNumber = null) {
+    try {
+      const client = this.clients.get(sessionName);
+      if (!client) {
+        throw new Error("Sessão não encontrada");
+      }
+
+      logger.info(`Usando método alternativo para sincronizar mensagens...`);
+
+      if (contactNumber) {
+        // Sincronizar mensagens de um contato específico
+        const chatId = contactNumber.includes("@c.us")
+          ? contactNumber
+          : `${contactNumber}@c.us`;
+
+        // Tentar diferentes métodos disponíveis
+        let messages = [];
+
+        if (typeof client.getAllMessagesInChat === "function") {
+          messages = await client.getAllMessagesInChat(chatId, true);
+        } else if (typeof client.loadAllEarlierMessages === "function") {
+          await client.loadAllEarlierMessages(chatId);
+          // Buscar mensagens de outra forma...
+        }
+
+        await syncService.processMessagesBatch(sessionName, messages);
+        return { success: true, messageCount: messages.length };
+      } else {
+        // Sincronizar todas as mensagens não lidas
+        const unreadMessages = await client.getAllUnreadMessages();
+        await syncService.processMessagesBatch(sessionName, unreadMessages);
+        return { success: true, messageCount: unreadMessages.length };
+      }
+    } catch (error) {
+      logger.error(`Erro no método alternativo de sincronização:`, error);
+      throw error;
+    }
+  }
+
+  async getSyncStatus(sessionName) {
+    try {
+      return await syncService.getSyncStatus(sessionName);
+    } catch (error) {
+      logger.error(`Erro ao obter status de sincronização:`, error);
+      throw error;
+    }
+  }
+
+  emitQRCode(sessionName, qrCode) {
+    console.log("chamei emitQRCode");
+    const session = this.sessions.get(sessionName);
+    if (session) {
+      console.log("possui session ", session);
+      session.qrCode = qrCode;
+      session.status = "awaiting_qr";
+
+      if (this.io) {
+        console.log("possui this.io ");
+        this.io.to(sessionName).emit("qrCodeUpdate", {
+          session: sessionName,
+          qrCode: qrCode,
+          status: "awaiting_qr",
+        });
+      }
+    }
+  }
+
+  emitStatus(sessionName, status) {
+    const session = this.sessions.get(sessionName);
+    if (session) {
+      session.status = status;
+
+      if (this.io) {
+        this.io.to(sessionName).emit("statusUpdate", {
+          session: sessionName,
+          status: status,
+        });
+      }
+    }
+  }
+
+  emitStateChange(sessionName, state) {
+    console.log("emitStateChange");
+    if (this.io) {
+      this.io.to(sessionName).emit("stateChange", {
+        session: sessionName,
+        state: state,
+      });
+    }
+  }
+
+  emitLoading(sessionName, percent, message) {
+    if (this.io) {
+      this.io.to(sessionName).emit("loadingUpdate", {
+        session: sessionName,
+        percent: percent,
+        message: message,
+      });
+    }
+  }
+
+  emitSuccess(sessionName, message) {
+    if (this.io) {
+      this.io.to(sessionName).emit("success", {
+        session: sessionName,
+        message: message,
+      });
+    }
+  }
+
+  emitError(sessionName, error) {
+    if (this.io) {
+      this.io.to(sessionName).emit("error", {
+        session: sessionName,
+        error: error,
+      });
+    }
+  }
+
+  emitMessage(sessionName, message) {
+    if (this.io) {
+      this.io.to(sessionName).emit("newMessage", {
+        session: sessionName,
+        message: message,
+      });
+    }
+  }
+
+  async closeSession(sessionName) {
+    try {
+      const session = this.sessions.get(sessionName);
+      if (session && session.client) {
+        await session.client.close();
+        this.sessions.delete(sessionName);
+        this.clients.delete(sessionName);
+
+        // Atualiza status no banco
+        await sessionRepository.updateStatus(sessionName, "disconnected");
+
+        logger.info(`Sessão ${sessionName} fechada com sucesso`);
+      }
+    } catch (error) {
+      logger.error(`Erro ao fechar sessão ${sessionName}:`, error);
+      throw error;
+    }
+  }
+
+  async sendMessage(sessionName, number, message) {
+    try {
+      const client = this.clients.get(sessionName);
+      if (!client) {
+        throw new Error("Sessão não encontrada ou não conectada");
+      }
+
+      const formattedNumber = number.includes("@c.us")
+        ? number
+        : `${number}@c.us`;
+
+      const result = await client.sendText(formattedNumber, message);
+
+      // Atualiza última atividade
+      await sessionRepository.updateOrCreate(sessionName, {
+        lastActivity: new Date(),
+      });
+
+      logger.info(`Mensagem enviada para ${formattedNumber}: ${message}`);
+      return result;
+    } catch (error) {
+      logger.error(`Erro ao enviar mensagem:`, error);
+      throw error;
+    }
+  }
+
+  getSessionStatus(sessionName) {
+    const session = this.sessions.get(sessionName);
+    return session ? session.status : "not_found";
+  }
+
+  async getAllSessions() {
+    try {
+      console.log("buscando sessoes...");
+      // Busca tanto do banco quanto da memória
+      const dbSessions = await sessionRepository.findAll();
+      const sessions = [];
+
+      for (const dbSession of dbSessions) {
+        const client = this.clients.get(dbSession.name);
+        // Verificar conexão real do cliente
+        if (client) {
+          await this.syncUnreadMessages(dbSession.name, client);
+        } else {
+          console.log("nao possui client..");
+        }
+        const isReallyConnected = client && client.isConnected();
+
+        sessions.push({
+          name: dbSession.name,
+          status: isReallyConnected ? "connected" : dbSession.status,
+          number: dbSession.number,
+          lastActivity: dbSession.lastActivity,
+          //hasClient: !!client,
+          isConnected: isReallyConnected,
+          qrCode: dbSession?.qrCode || null,
+          source: dbSession.source,
+        });
+      }
+
+      return sessions;
+    } catch (error) {
+      logger.error("Erro ao obter sessões:", error);
+      throw error;
+    }
+  }
+
+  async getSessionInfo(sessionName) {
+    try {
+      const dbSession = await sessionRepository.findByName(sessionName);
+      const memorySession = this.sessions.get(sessionName);
+
+      if (!dbSession && !memorySession) {
+        return null;
+      }
+
+      return {
+        name: sessionName,
+        status: memorySession?.status || dbSession?.status,
+        number: dbSession?.number,
+        lastActivity: dbSession?.lastActivity,
+        hasClient: this.clients.has(sessionName),
+        qrCode: memorySession?.qrCode || dbSession?.qrCode,
+        source: dbSession?.source,
+      };
+    } catch (error) {
+      logger.error(
+        `Erro ao obter informações da sessão ${sessionName}:`,
+        error
+      );
+      throw error;
+    }
+  }
+
+  async deleteSession(sessionName, force = false) {
+    try {
+      logger.info(
+        `Iniciando exclusão da sessão: ${sessionName}${
+          force ? " (forçada)" : ""
+        }`
+      );
+
+      // Verificar se a sessão existe
+      const sessionExists =
+        this.sessions.has(sessionName) || this.clients.has(sessionName);
+
+      if (!sessionExists) {
+        logger.warn(
+          `Sessão ${sessionName} não encontrada na memória, verificando banco...`
+        );
+      }
+
+      // 1. Obter o cliente da sessão
+      const client = this.clients.get(sessionName);
+
+      // 2. Desconectar e destruir o cliente se existir
+      if (client) {
+        try {
+          logger.info(`Desconectando cliente da sessão: ${sessionName}`);
+
+          if (client.isConnected()) {
+            // Se forçado, tenta logout mais agressivo
+            if (force) {
+              try {
+                await client.logout();
+                logger.info(`Logout forçado realizado: ${sessionName}`);
+              } catch (logoutError) {
+                logger.warn(`Erro no logout forçado:`, logoutError);
+              }
+            }
+
+            // Fechar o cliente
+            await client.close();
+          }
+
+          // Destruir o cliente
+          await client.destroy();
+          logger.info(`Cliente destruído com sucesso: ${sessionName}`);
+        } catch (error) {
+          logger.warn(
+            `Erro ao desconectar/destruir cliente ${sessionName}:`,
+            error
+          );
+
+          if (force) {
+            // Se forçado, apenas remove da memória mesmo com erro
+            logger.warn(
+              `Forçando remoção do cliente ${sessionName} da memória`
+            );
+          } else {
+            throw new Error(`Falha ao desconectar cliente: ${error.message}`);
+          }
+        } finally {
+          // Remove do mapa de clients
+          this.clients.delete(sessionName);
+        }
+      }
+
+      // 3. Remover do mapa de sessões
+      if (this.sessions.has(sessionName)) {
+        this.sessions.delete(sessionName);
+      }
+
+      // 4. Excluir do banco de dados
+      const dbDeleteResult = await sessionRepository.deleteByName(sessionName);
+
+      if (dbDeleteResult) {
+        logger.info(`Sessão ${sessionName} excluída do banco de dados`);
+      } else {
+        logger.warn(`Sessão ${sessionName} não encontrada no banco de dados`);
+      }
+
+      // 5. Limpar quaisquer eventos relacionados à sessão
+      this.removeSessionListeners(sessionName);
+
+      // 6. Emitir evento de sessão deletada
+      this.emitSessionDeleted(sessionName);
+
+      logger.info(`Sessão ${sessionName} deletada com sucesso`);
+      return {
+        success: true,
+        message: `Sessão ${sessionName} deletada com sucesso`,
+        clientDisconnected: !!client,
+        databaseRemoved: !!dbDeleteResult,
+      };
+    } catch (error) {
+      logger.error(`Erro ao deletar sessão ${sessionName}:`, error);
+
+      // Emitir evento de erro
+      this.emitError(sessionName, `Erro ao deletar sessão: ${error.message}`);
+
+      // Se for modo forçado, tenta limpar pelo menos da memória
+      if (force) {
+        logger.warn(`Modo forçado: limpando sessão ${sessionName} da memória`);
+        this.clients.delete(sessionName);
+        this.sessions.delete(sessionName);
+
+        return {
+          success: true,
+          message: `Sessão ${sessionName} removida da memória (modo forçado)`,
+          forced: true,
+        };
+      }
+
+      throw error;
+    }
+  }
+
+  // Função auxiliar para remover listeners (se necessário)
+  removeSessionListeners(sessionName) {
+    // Implemente esta função se você tiver listeners específicos para remover
+    logger.info(`Listeners da sessão ${sessionName} limpos`);
+  }
+
+  // Função para emitir evento de sessão deletada
+  emitSessionDeleted(sessionName) {
+    logger.info(`Evento de sessão deletada emitido: ${sessionName}`);
+  }
+
+  async createAutoTicket(sessionName, contactNumber, contactName, messages) {
+    try {
+      logger.info(`Criando ticket automático para: ${contactNumber}`);
+
+      const ticketData = {
+        sessionName: sessionName,
+        contactNumber: contactNumber,
+        contactName: contactName || contactNumber,
+        status: "open",
+        messages: messages,
+        unreadMessages: 1,
+        lastMessage: new Date(),
+        createdAt: new Date(),
+      };
+
+      await ticketRepository.create(ticketData);
+
+      logger.info(`Ticket criado para ${contactNumber}`);
+    } catch (error) {
+      logger.error(`Erro ao criar ticket automático:`, error);
+    }
+  }
+
+  emitRedirect(sessionName, route) {
+    console.log(
+      `🔥 Tentando emitir redirect para sessão: ${sessionName}, rota: ${route}`
+    );
+    console.log(`🔥 IO disponível: ${!!this.io}`);
+
+    if (this.io) {
+      console.log(`🔥 Salas disponíveis:`, this.io.sockets.adapter.rooms);
+      console.log(
+        `🔥 Clientes na sala ${sessionName}:`,
+        this.io.sockets.adapter.rooms.get(sessionName)
+      );
+
+      this.io.to(sessionName).emit("redirect", {
+        session: sessionName,
+        route: route,
+      });
+      console.log(`✅ Evento redirect emitido para ${sessionName}`);
+    } else {
+      console.log("❌ IO não disponível para emitir redirect");
+    }
+  }
+
+  async reconnectSession(sessionName) {
+    try {
+      logger.info(`Tentando reconectar sessão: ${sessionName}`);
+
+      // Verificar se a sessão existe no banco
+      const dbSession = await sessionRepository.findByName(sessionName);
+      if (!dbSession) {
+        throw new Error(`Sessão ${sessionName} não encontrada no banco`);
+      }
+
+      // 1. Fechar e limpar qualquer instância existente
+      const existingClient = this.clients.get(sessionName);
+      if (existingClient) {
+        logger.info(`Fechando cliente existente para ${sessionName}`);
+        try {
+          await existingClient.close();
+        } catch (error) {
+          logger.warn(`Erro ao fechar cliente existente:`, error);
+        }
+        this.clients.delete(sessionName);
+      }
+
+      if (this.sessions.has(sessionName)) {
+        this.sessions.delete(sessionName);
+      }
+
+      // 2. Matar processos do Chrome
+      await this.killChromeProcesses(sessionName);
+      await new Promise((resolve) => setTimeout(resolve, 3000));
+
+      // 3. Atualizar status para connecting
+      await sessionRepository.updateStatus(sessionName, "connecting");
+      this.emitStatus(sessionName, "connecting");
+
+      // 4. 🔥 AGORA: Criar sessão em modo de reconexão
+      const result = await this.createSession(sessionName, true); // true = isReconnect
+
+      logger.info(`Sessão ${sessionName} reconectada com sucesso`);
+      this.emitSuccess(sessionName, "Sessão reconectada com sucesso");
+      return result;
+    } catch (error) {
+      logger.error(`Erro ao reconectar sessão ${sessionName}:`, error);
+      await sessionRepository.updateStatus(sessionName, "failed");
+      this.emitStatus(sessionName, "failed");
+      this.emitError(sessionName, `Erro ao reconectar: ${error.message}`);
+      throw error;
+    }
+  }
+
+  async killChromeProcesses(sessionName) {
+    try {
+      const { exec } = require("child_process");
+
+      if (process.platform === "win32") {
+        // Windows
+        exec("taskkill /f /im chrome.exe /im chromedriver.exe /im browser.exe");
+      } else {
+        // Linux/Mac - mais agressivo para garantir
+        exec('pkill -f "(chrome|chromium|chromedriver|puppeteer|browser)"');
+      }
+
+      logger.info(`Processos do Chrome finalizados para: ${sessionName}`);
+    } catch (error) {
+      logger.warn(`Não foi possível finalizar processos: ${error.message}`);
+    }
+  }
+
+  async forceKillChromeProcesses(sessionName) {
+    try {
+      const { execSync } = require("child_process");
+
+      if (process.platform === "win32") {
+        // Windows - mais agressivo
+        execSync(
+          "taskkill /f /im chrome.exe /im chromedriver.exe /im browser.exe /t 2>/nul",
+          { stdio: "ignore" }
+        );
+      } else {
+        // Linux/Mac - mais agressivo
+        try {
+          execSync(
+            'pkill -9 -f "(chrome|chromium|chromedriver|puppeteer)" 2>/dev/null',
+            { stdio: "ignore" }
+          );
+        } catch (e) {} // Ignorar erros de processo não encontrado
+      }
+
+      logger.info(
+        `Processos do Chrome finalizados forçadamente para: ${sessionName}`
+      );
+    } catch (error) {
+      logger.warn(`Erro na finalização forçada: ${error.message}`);
+    }
+  }
+
+  checkSessionHealth() {
+    logger.info("🔍 Verificando saúde das sessões...");
+    console.log("📋 Sessões na memória:", Array.from(this.sessions.keys()));
+    console.log("📋 Clientes conectados:", Array.from(this.clients.keys()));
+
+    // Verificar se os clientes estão realmente conectados
+    for (const [sessionName, client] of this.clients.entries()) {
+      console.log(
+        `✅ ${sessionName}: ${
+          client.isConnected() ? "Conectado" : "Desconectado"
+        }`
+      );
+    }
+  }
+}
+
+export default new WhatsAppService();
