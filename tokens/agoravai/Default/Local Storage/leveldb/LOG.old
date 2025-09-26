@@ -1,0 +1,6 @@
+2025/09/20-17:31:26.616 6be33 Reusing MANIFEST /Users/thiagosales/primodev/madefy-wpp/backend/tokens/agoravai/Default/Local Storage/leveldb/MANIFEST-000001
+2025/09/20-17:31:26.617 6be33 Recovering log #4
+2025/09/20-17:31:26.617 6be33 Reusing old log /Users/thiagosales/primodev/madefy-wpp/backend/tokens/agoravai/Default/Local Storage/leveldb/000004.log 
+2025/09/20-18:08:27.141 6be25 Level-0 table #8: started
+2025/09/20-18:08:27.145 6be25 Level-0 table #8: 14393 bytes OK
+2025/09/20-18:08:27.156 6be25 Delete type=0 #4

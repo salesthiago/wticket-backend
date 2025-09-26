@@ -1,0 +1,194 @@
+2025/09/19-16:43:35.704 ccba9 Reusing MANIFEST /Users/thiagosales/primodev/madefy-wpp/backend/tokens/teste/Default/IndexedDB/https_web.whatsapp.com_0.indexeddb.leveldb/MANIFEST-000001
+2025/09/19-16:43:35.705 ccba9 Recovering log #115
+2025/09/19-16:43:35.712 ccba9 Reusing old log /Users/thiagosales/primodev/madefy-wpp/backend/tokens/teste/Default/IndexedDB/https_web.whatsapp.com_0.indexeddb.leveldb/000115.log 
+2025/09/19-16:43:35.712 ccba9 Delete type=2 #114
+2025/09/19-16:43:35.737 ccba9 Manual compaction at level-0 from '\x005\x00\x00\x00' @ 72057594037927935 : 1 .. '\x006\x00\x00\x00' @ 0 : 0; will stop at (end)
+2025/09/19-16:43:35.745 ccba9 Level-0 table #120: started
+2025/09/19-16:43:35.763 ccba9 Level-0 table #120: 96924 bytes OK
+2025/09/19-16:43:35.766 ccba9 Delete type=0 #115
+2025/09/19-16:43:35.774 ccba9 Manual compaction at level-0 from '\x003\x00\x00\x00' @ 72057594037927935 : 1 .. '\x004\x00\x00\x00' @ 0 : 0; will stop at '\x007\x00\x00\xc8\x0d\x00l\x00o\x00c\x00a\x00l\x00_\x00s\x00t\x00o\x00r\x00a\x00g\x00e' @ 25263 : 1
+2025/09/19-16:43:35.774 ccba9 Compacting 1@0 + 1@1 files
+2025/09/19-16:43:35.785 ccba9 Generated table #121@0: 3189 keys, 50130 bytes
+2025/09/19-16:43:35.785 ccba9 Compacted 1@0 + 1@1 files => 50130 bytes
+2025/09/19-16:43:35.786 ccba9 compacted to: files[ 0 1 1 0 0 0 0 ]
+2025/09/19-16:43:35.787 ccba9 Delete type=2 #120
+2025/09/19-16:43:35.789 ccba9 Manual compaction at level-0 from '\x007\x00\x00\xc8\x0d\x00l\x00o\x00c\x00a\x00l\x00_\x00s\x00t\x00o\x00r\x00a\x00g\x00e' @ 25263 : 1 .. '\x004\x00\x00\x00' @ 0 : 0; will stop at (end)
+2025/09/19-16:43:35.789 ccba9 Level-0 table #123: started
+2025/09/19-16:43:35.790 ccba9 Level-0 table #123: 791 bytes OK
+2025/09/19-16:43:35.792 ccba9 Delete type=2 #117
+2025/09/19-16:43:35.792 ccba9 Delete type=0 #119
+2025/09/19-16:43:35.794 ccba9 Manual compaction at level-0 from '\x006\x00\x00\x00' @ 72057594037927935 : 1 .. '\x007\x00\x00\x00' @ 0 : 0; will stop at '\x006\x00\x00\xc8\x06\x00s\x00t\x00a\x00t\x00u\x00s' @ 27529 : 0
+2025/09/19-16:43:35.794 ccba9 Compacting 1@0 + 1@1 files
+2025/09/19-16:43:35.799 ccba9 Generated table #124@0: 3179 keys, 52105 bytes
+2025/09/19-16:43:35.799 ccba9 Compacted 1@0 + 1@1 files => 52105 bytes
+2025/09/19-16:43:35.800 ccba9 compacted to: files[ 0 1 1 0 0 0 0 ]
+2025/09/19-16:43:35.800 ccba9 Manual compaction at level-0 from '\x006\x00\x00\xc8\x06\x00s\x00t\x00a\x00t\x00u\x00s' @ 27529 : 0 .. '\x007\x00\x00\x00' @ 0 : 0; will stop at (end)
+2025/09/19-16:43:35.803 ccba9 Level-0 table #126: started
+2025/09/19-16:43:35.804 ccba9 Level-0 table #126: 15928 bytes OK
+2025/09/19-16:43:35.806 ccba9 Delete type=0 #122
+2025/09/19-16:43:35.806 ccba9 Delete type=2 #123
+2025/09/19-16:43:35.806 ccba9 Delete type=2 #121
+2025/09/19-16:43:35.807 ccba9 Manual compaction at level-0 from '\x00&\x00\x00\x00' @ 72057594037927935 : 1 .. '\x00'\x00\x00\x00' @ 0 : 0; will stop at '\x008\x00\x00\xc8\x03\x00w\x00a\x00m' @ 27588 : 1
+2025/09/19-16:43:35.807 ccba9 Compacting 1@0 + 1@1 files
+2025/09/19-16:43:35.811 ccba9 Generated table #127@0: 2765 keys, 24867 bytes
+2025/09/19-16:43:35.811 ccba9 Compacted 1@0 + 1@1 files => 24867 bytes
+2025/09/19-16:43:35.812 ccba9 compacted to: files[ 0 1 1 0 0 0 0 ]
+2025/09/19-16:43:35.812 ccba9 Delete type=2 #126
+2025/09/19-16:43:35.813 ccba9 Manual compaction at level-0 from '\x008\x00\x00\xc8\x03\x00w\x00a\x00m' @ 27588 : 1 .. '\x00'\x00\x00\x00' @ 0 : 0; will stop at (end)
+2025/09/19-16:43:35.813 ccba9 Manual compaction at level-1 from '\x00&\x00\x00\x00' @ 72057594037927935 : 1 .. '\x00'\x00\x00\x00' @ 0 : 0; will stop at '\x008\x00\x00\xc8\x03\x00w\x00a\x00m' @ 27588 : 1
+2025/09/19-16:43:35.813 ccba9 Compacting 1@1 + 1@2 files
+2025/09/19-16:43:35.815 ccba9 Generated table #128@1: 208 keys, 3402 bytes
+2025/09/19-16:43:35.815 ccba9 Compacted 1@1 + 1@2 files => 3402 bytes
+2025/09/19-16:43:35.816 ccba9 compacted to: files[ 0 0 1 0 0 0 0 ]
+2025/09/19-16:43:35.817 ccba9 Delete type=2 #127
+2025/09/19-16:43:35.817 ccba9 Manual compaction at level-1 from '\x008\x00\x00\xc8\x03\x00w\x00a\x00m' @ 27588 : 1 .. '\x00'\x00\x00\x00' @ 0 : 0; will stop at (end)
+2025/09/19-16:43:35.819 ccbab Level-0 table #130: started
+2025/09/19-16:43:35.820 ccbab Level-0 table #130: 2856 bytes OK
+2025/09/19-16:43:35.821 ccbab Delete type=0 #125
+2025/09/19-16:43:35.821 ccbab Delete type=2 #97
+2025/09/19-16:43:35.822 ccbab Delete type=2 #124
+2025/09/19-16:43:35.822 ccba9 Manual compaction at level-0 from '\x002\x00\x00\x00' @ 72057594037927935 : 1 .. '\x003\x00\x00\x00' @ 0 : 0; will stop at (end)
+2025/09/19-16:43:35.822 ccba9 Manual compaction at level-1 from '\x002\x00\x00\x00' @ 72057594037927935 : 1 .. '\x003\x00\x00\x00' @ 0 : 0; will stop at '\x008\x00\x00\xc8\x11\x00w\x00o\x00r\x00k\x00e\x00r\x00_\x00w\x00a\x00m\x00_\x00e\x00v\x00e\x00n\x00t\x00s' @ 28608 : 1
+2025/09/19-16:43:35.822 ccba9 Compacting 1@1 + 1@2 files
+2025/09/19-16:43:35.824 ccba9 Generated table #131@1: 338 keys, 4830 bytes
+2025/09/19-16:43:35.824 ccba9 Compacted 1@1 + 1@2 files => 4830 bytes
+2025/09/19-16:43:35.825 ccba9 compacted to: files[ 0 0 1 0 0 0 0 ]
+2025/09/19-16:43:35.825 ccba9 Delete type=2 #130
+2025/09/19-16:43:35.825 ccba9 Manual compaction at level-1 from '\x008\x00\x00\xc8\x11\x00w\x00o\x00r\x00k\x00e\x00r\x00_\x00w\x00a\x00m\x00_\x00e\x00v\x00e\x00n\x00t\x00s' @ 28608 : 1 .. '\x003\x00\x00\x00' @ 0 : 0; will stop at (end)
+2025/09/19-16:43:35.826 ccba9 Level-0 table #133: started
+2025/09/19-16:43:35.827 ccba9 Level-0 table #133: 502 bytes OK
+2025/09/19-16:43:35.828 ccba9 Delete type=2 #128
+2025/09/19-16:43:35.828 ccba9 Delete type=0 #129
+2025/09/19-16:43:35.828 ccba9 Manual compaction at level-0 from '\x007\x00\x00\x00' @ 72057594037927935 : 1 .. '\x008\x00\x00\x00' @ 0 : 0; will stop at (end)
+2025/09/19-16:43:35.829 ccba9 Manual compaction at level-1 from '\x007\x00\x00\x00' @ 72057594037927935 : 1 .. '\x008\x00\x00\x00' @ 0 : 0; will stop at '\x007\x00\x00\xc8\x0d\x00l\x00o\x00c\x00a\x00l\x00_\x00s\x00t\x00o\x00r\x00a\x00g\x00e' @ 28673 : 0
+2025/09/19-16:43:35.829 ccba9 Compacting 1@1 + 1@2 files
+2025/09/19-16:43:35.830 ccba9 Generated table #134@1: 313 keys, 4428 bytes
+2025/09/19-16:43:35.830 ccba9 Compacted 1@1 + 1@2 files => 4428 bytes
+2025/09/19-16:43:35.831 ccba9 compacted to: files[ 0 0 1 0 0 0 0 ]
+2025/09/19-16:43:35.831 ccba9 Delete type=2 #133
+2025/09/19-16:43:35.832 ccba9 Manual compaction at level-1 from '\x007\x00\x00\xc8\x0d\x00l\x00o\x00c\x00a\x00l\x00_\x00s\x00t\x00o\x00r\x00a\x00g\x00e' @ 28673 : 0 .. '\x008\x00\x00\x00' @ 0 : 0; will stop at (end)
+2025/09/19-16:43:35.990 ccbbb Level-0 table #136: started
+2025/09/19-16:43:35.993 ccbbb Level-0 table #136: 6043 bytes OK
+2025/09/19-16:43:35.997 ccbbb Delete type=0 #132
+2025/09/19-16:43:35.997 ccbbb Delete type=2 #131
+2025/09/19-16:43:35.997 ccbbb Manual compaction at level-0 from '\x009\x00\x00\x00' @ 72057594037927935 : 1 .. '\x00:\x00\x00\x00' @ 0 : 0; will stop at (end)
+2025/09/19-16:43:35.998 ccbbb Level-0 table #138: started
+2025/09/19-16:43:35.999 ccbbb Level-0 table #138: 870 bytes OK
+2025/09/19-16:43:36.001 ccbbb Delete type=0 #135
+2025/09/19-16:43:36.001 ccbbb Manual compaction at level-0 from '\x00:\x00\x00\x00' @ 72057594037927935 : 1 .. '\x00;\x00\x00\x00' @ 0 : 0; will stop at '\x00:\x00\x00\x05' @ 29028 : 0
+2025/09/19-16:43:36.002 ccbbb Compacting 1@0 + 1@1 files
+2025/09/19-16:43:36.003 ccbbb Generated table #139@0: 299 keys, 5862 bytes
+2025/09/19-16:43:36.004 ccbbb Compacted 1@0 + 1@1 files => 5862 bytes
+2025/09/19-16:43:36.005 ccbbb compacted to: files[ 0 1 1 0 0 0 0 ]
+2025/09/19-16:43:36.005 ccbbb Delete type=2 #138
+2025/09/19-16:43:36.006 ccbbc Manual compaction at level-0 from '\x00:\x00\x00\x05' @ 29028 : 0 .. '\x00;\x00\x00\x00' @ 0 : 0; will stop at (end)
+2025/09/19-16:43:36.006 ccbab Level-0 table #141: started
+2025/09/19-16:43:36.008 ccbab Level-0 table #141: 1240 bytes OK
+2025/09/19-16:43:36.009 ccbab Delete type=0 #137
+2025/09/19-16:43:36.009 ccbab Delete type=2 #136
+2025/09/19-16:43:36.010 ccbbb Manual compaction at level-0 from '\x00;\x00\x00\x00' @ 72057594037927935 : 1 .. '\x00<\x00\x00\x00' @ 0 : 0; will stop at '\x00;\x00\x00\x05' @ 29089 : 0
+2025/09/19-16:43:36.010 ccbbb Compacting 1@0 + 1@1 files
+2025/09/19-16:43:36.012 ccbbb Generated table #142@0: 327 keys, 6234 bytes
+2025/09/19-16:43:36.013 ccbbb Compacted 1@0 + 1@1 files => 6234 bytes
+2025/09/19-16:43:36.014 ccbbb compacted to: files[ 0 1 1 0 0 0 0 ]
+2025/09/19-16:43:36.014 ccbbb Delete type=2 #141
+2025/09/19-16:43:36.015 ccbbb Manual compaction at level-0 from '\x00;\x00\x00\x05' @ 29089 : 0 .. '\x00<\x00\x00\x00' @ 0 : 0; will stop at (end)
+2025/09/19-16:43:36.016 ccbab Level-0 table #144: started
+2025/09/19-16:43:36.017 ccbab Level-0 table #144: 994 bytes OK
+2025/09/19-16:43:36.019 ccbab Delete type=2 #139
+2025/09/19-16:43:36.019 ccbab Delete type=0 #140
+2025/09/19-16:43:36.019 ccbab Manual compaction at level-0 from '\x00<\x00\x00\x00' @ 72057594037927935 : 1 .. '\x00=\x00\x00\x00' @ 0 : 0; will stop at '\x00D\x00\x00\xc8\x04\x00k\x00e\x00y\x00s' @ 29106 : 1
+2025/09/19-16:43:36.019 ccbab Compacting 1@0 + 1@1 files
+2025/09/19-16:43:36.021 ccbab Generated table #145@0: 368 keys, 6766 bytes
+2025/09/19-16:43:36.021 ccbab Compacted 1@0 + 1@1 files => 6766 bytes
+2025/09/19-16:43:36.022 ccbab compacted to: files[ 0 1 1 0 0 0 0 ]
+2025/09/19-16:43:36.023 ccbab Delete type=2 #144
+2025/09/19-16:43:36.023 ccbab Manual compaction at level-0 from '\x00D\x00\x00\xc8\x04\x00k\x00e\x00y\x00s' @ 29106 : 1 .. '\x00=\x00\x00\x00' @ 0 : 0; will stop at (end)
+2025/09/19-16:43:36.024 ccbab Level-0 table #147: started
+2025/09/19-16:43:36.026 ccbab Level-0 table #147: 900 bytes OK
+2025/09/19-16:43:36.027 ccbab Delete type=2 #142
+2025/09/19-16:43:36.028 ccbab Delete type=0 #143
+2025/09/19-16:43:36.028 ccbab Manual compaction at level-0 from '\x00=\x00\x00\x00' @ 72057594037927935 : 1 .. '\x00>\x00\x00\x00' @ 0 : 0; will stop at '\x00D\x02\x02\x03\x00\x00\x00\x00\x00\x00\xf0?' @ 29159 : 1
+2025/09/19-16:43:36.028 ccbab Compacting 1@0 + 1@1 files
+2025/09/19-16:43:36.030 ccbab Generated table #148@0: 380 keys, 7229 bytes
+2025/09/19-16:43:36.030 ccbab Compacted 1@0 + 1@1 files => 7229 bytes
+2025/09/19-16:43:36.031 ccbab compacted to: files[ 0 1 1 0 0 0 0 ]
+2025/09/19-16:43:36.032 ccbab Delete type=2 #147
+2025/09/19-16:43:36.032 ccbab Manual compaction at level-0 from '\x00D\x02\x02\x03\x00\x00\x00\x00\x00\x00\xf0?' @ 29159 : 1 .. '\x00>\x00\x00\x00' @ 0 : 0; will stop at (end)
+2025/09/19-16:43:36.033 ccbab Level-0 table #150: started
+2025/09/19-16:43:36.035 ccbab Level-0 table #150: 2882 bytes OK
+2025/09/19-16:43:36.036 ccbab Delete type=2 #145
+2025/09/19-16:43:36.036 ccbab Delete type=0 #146
+2025/09/19-16:43:36.037 ccbab Manual compaction at level-0 from '\x00>\x00\x00\x00' @ 72057594037927935 : 1 .. '\x00?\x00\x00\x00' @ 0 : 0; will stop at '\x00F\x00\x00\x05' @ 29341 : 1
+2025/09/19-16:43:36.037 ccbab Compacting 1@0 + 1@1 files
+2025/09/19-16:43:36.039 ccbab Generated table #151@0: 540 keys, 9783 bytes
+2025/09/19-16:43:36.039 ccbab Compacted 1@0 + 1@1 files => 9783 bytes
+2025/09/19-16:43:36.040 ccbab compacted to: files[ 0 1 1 0 0 0 0 ]
+2025/09/19-16:43:36.041 ccbab Delete type=2 #150
+2025/09/19-16:43:36.041 ccbab Manual compaction at level-0 from '\x00F\x00\x00\x05' @ 29341 : 1 .. '\x00?\x00\x00\x00' @ 0 : 0; will stop at (end)
+2025/09/19-16:43:36.042 ccbab Level-0 table #153: started
+2025/09/19-16:43:36.043 ccbab Level-0 table #153: 249 bytes OK
+2025/09/19-16:43:36.045 ccbab Delete type=0 #149
+2025/09/19-16:43:36.045 ccbab Delete type=2 #148
+2025/09/19-16:43:36.046 ccbab Manual compaction at level-0 from '\x00?\x00\x00\x00' @ 72057594037927935 : 1 .. '\x00@\x00\x00\x00' @ 0 : 0; will stop at '\x00?\x00\x00\x05' @ 29361 : 0
+2025/09/19-16:43:36.046 ccbab Compacting 1@0 + 1@1 files
+2025/09/19-16:43:36.048 ccbab Generated table #154@0: 538 keys, 9731 bytes
+2025/09/19-16:43:36.048 ccbab Compacted 1@0 + 1@1 files => 9731 bytes
+2025/09/19-16:43:36.049 ccbab compacted to: files[ 0 1 1 0 0 0 0 ]
+2025/09/19-16:43:36.049 ccbab Delete type=2 #153
+2025/09/19-16:43:36.050 ccbbb Manual compaction at level-0 from '\x00?\x00\x00\x05' @ 29361 : 0 .. '\x00@\x00\x00\x00' @ 0 : 0; will stop at (end)
+2025/09/19-16:43:36.051 ccbab Level-0 table #156: started
+2025/09/19-16:43:36.052 ccbab Level-0 table #156: 249 bytes OK
+2025/09/19-16:43:36.054 ccbab Delete type=2 #151
+2025/09/19-16:43:36.054 ccbab Delete type=0 #152
+2025/09/19-16:43:36.054 ccbab Manual compaction at level-0 from '\x00@\x00\x00\x00' @ 72057594037927935 : 1 .. '\x00A\x00\x00\x00' @ 0 : 0; will stop at '\x00@\x00\x00\x05' @ 29367 : 0
+2025/09/19-16:43:36.054 ccbab Compacting 1@0 + 1@1 files
+2025/09/19-16:43:36.056 ccbab Generated table #157@0: 536 keys, 9686 bytes
+2025/09/19-16:43:36.057 ccbab Compacted 1@0 + 1@1 files => 9686 bytes
+2025/09/19-16:43:36.057 ccbab compacted to: files[ 0 1 1 0 0 0 0 ]
+2025/09/19-16:43:36.058 ccbab Delete type=2 #156
+2025/09/19-16:43:36.058 ccbab Manual compaction at level-0 from '\x00@\x00\x00\x05' @ 29367 : 0 .. '\x00A\x00\x00\x00' @ 0 : 0; will stop at (end)
+2025/09/19-16:43:36.059 ccbab Level-0 table #159: started
+2025/09/19-16:43:36.060 ccbab Level-0 table #159: 249 bytes OK
+2025/09/19-16:43:36.061 ccbab Delete type=2 #154
+2025/09/19-16:43:36.062 ccbab Delete type=0 #155
+2025/09/19-16:43:36.062 ccbab Manual compaction at level-0 from '\x00A\x00\x00\x00' @ 72057594037927935 : 1 .. '\x00B\x00\x00\x00' @ 0 : 0; will stop at '\x00A\x00\x00\x05' @ 29373 : 0
+2025/09/19-16:43:36.062 ccbab Compacting 1@0 + 1@1 files
+2025/09/19-16:43:36.064 ccbab Generated table #160@0: 534 keys, 9654 bytes
+2025/09/19-16:43:36.064 ccbab Compacted 1@0 + 1@1 files => 9654 bytes
+2025/09/19-16:43:36.065 ccbab compacted to: files[ 0 1 1 0 0 0 0 ]
+2025/09/19-16:43:36.066 ccbab Delete type=2 #159
+2025/09/19-16:43:36.066 ccbab Manual compaction at level-0 from '\x00A\x00\x00\x05' @ 29373 : 0 .. '\x00B\x00\x00\x00' @ 0 : 0; will stop at (end)
+2025/09/19-16:43:36.067 ccbab Level-0 table #162: started
+2025/09/19-16:43:36.068 ccbab Level-0 table #162: 249 bytes OK
+2025/09/19-16:43:36.070 ccbab Delete type=0 #158
+2025/09/19-16:43:36.070 ccbab Delete type=2 #157
+2025/09/19-16:43:36.070 ccbab Manual compaction at level-0 from '\x00B\x00\x00\x00' @ 72057594037927935 : 1 .. '\x00C\x00\x00\x00' @ 0 : 0; will stop at '\x00B\x00\x00\x05' @ 29379 : 0
+2025/09/19-16:43:36.070 ccbab Compacting 1@0 + 1@1 files
+2025/09/19-16:43:36.073 ccbab Generated table #163@0: 532 keys, 9547 bytes
+2025/09/19-16:43:36.073 ccbab Compacted 1@0 + 1@1 files => 9547 bytes
+2025/09/19-16:43:36.074 ccbab compacted to: files[ 0 1 1 0 0 0 0 ]
+2025/09/19-16:43:36.074 ccbab Delete type=2 #162
+2025/09/19-16:43:36.074 ccbab Manual compaction at level-0 from '\x00B\x00\x00\x05' @ 29379 : 0 .. '\x00C\x00\x00\x00' @ 0 : 0; will stop at (end)
+2025/09/19-16:43:36.075 ccbab Level-0 table #165: started
+2025/09/19-16:43:36.076 ccbab Level-0 table #165: 249 bytes OK
+2025/09/19-16:43:36.077 ccbab Delete type=0 #161
+2025/09/19-16:43:36.078 ccbab Delete type=2 #160
+2025/09/19-16:43:36.078 ccbab Manual compaction at level-0 from '\x00C\x00\x00\x00' @ 72057594037927935 : 1 .. '\x00D\x00\x00\x00' @ 0 : 0; will stop at '\x00C\x00\x00\x05' @ 29385 : 0
+2025/09/19-16:43:36.078 ccbab Compacting 1@0 + 1@1 files
+2025/09/19-16:43:36.080 ccbab Generated table #166@0: 530 keys, 9408 bytes
+2025/09/19-16:43:36.081 ccbab Compacted 1@0 + 1@1 files => 9408 bytes
+2025/09/19-16:43:36.082 ccbab compacted to: files[ 0 1 1 0 0 0 0 ]
+2025/09/19-16:43:36.082 ccbab Delete type=2 #165
+2025/09/19-16:43:36.082 ccbab Manual compaction at level-0 from '\x00C\x00\x00\x05' @ 29385 : 0 .. '\x00D\x00\x00\x00' @ 0 : 0; will stop at (end)
+2025/09/19-16:43:36.083 ccbab Level-0 table #168: started
+2025/09/19-16:43:36.085 ccbab Level-0 table #168: 1560 bytes OK
+2025/09/19-16:43:36.086 ccbab Delete type=0 #164
+2025/09/19-16:43:36.086 ccbab Delete type=2 #163
+2025/09/19-16:43:36.086 ccbab Manual compaction at level-0 from '\x00F\x00\x00\x00' @ 72057594037927935 : 1 .. '\x00G\x00\x00\x00' @ 0 : 0; will stop at '\x00F\x00\x00\x05' @ 29551 : 0
+2025/09/19-16:43:36.086 ccbab Compacting 1@0 + 1@1 files
+2025/09/19-16:43:36.088 ccbab Generated table #169@0: 528 keys, 7555 bytes
+2025/09/19-16:43:36.088 ccbab Compacted 1@0 + 1@1 files => 7555 bytes
+2025/09/19-16:43:36.089 ccbab compacted to: files[ 0 1 1 0 0 0 0 ]
+2025/09/19-16:43:36.089 ccbab Delete type=2 #168
+2025/09/19-16:43:36.089 ccbab Manual compaction at level-0 from '\x00F\x00\x00\x05' @ 29551 : 0 .. '\x00G\x00\x00\x00' @ 0 : 0; will stop at (end)
