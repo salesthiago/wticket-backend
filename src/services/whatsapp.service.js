@@ -3,12 +3,27 @@ import logger from "../utils/logger.js";
 import sessionRepository from "../repositories/session.repository.js";
 import ticketRepository from "../repositories/ticket.repository.js";
 import syncService from "../services/sync.service.js";
+import fs from "fs";
+import path from "path";
 
 class WhatsAppService {
   constructor() {
     this.sessions = new Map();
     this.io = null;
     this.clients = new Map();
+    this.healthCheckInterval = null;
+  }
+
+  startHealthCheck() {
+    if (this.healthCheckInterval) {
+      clearInterval(this.healthCheckInterval);
+    }
+
+    this.healthCheckInterval = setInterval(async () => {
+      await this.performHealthCheck();
+    }, 30000); // Verificar a cada 30 segundos
+
+    logger.info("Health Check iniciado");
   }
 
   setSocketIO(io) {
@@ -16,6 +31,46 @@ class WhatsAppService {
     console.log("setSocketIO iniciado com sucesso");
   }
 
+   async performHealthCheck() {
+    try {
+      const dbSessions = await sessionRepository.findAll();
+      
+      for (const dbSession of dbSessions) {
+        if (dbSession.status === "connected") {
+          const client = this.clients.get(dbSession.name);
+          
+          // Verificar se o cliente existe e está conectado
+          if (!client) {
+            logger.warn(`Cliente ausente para sessão conectada: ${dbSession.name}`);
+            await this.reconnectSession(dbSession.name);
+            continue;
+          }
+
+          // Verificar conexão real
+          const isConnected = await this.checkClientConnection(client);
+          if (!isConnected) {
+            logger.warn(`Cliente desconectado: ${dbSession.name}`);
+            await sessionRepository.updateStatus(dbSession.name, "disconnected");
+            await this.reconnectSession(dbSession.name);
+          }
+        }
+      }
+    } catch (error) {
+      logger.error("Erro no Health Check:", error);
+    }
+  }
+
+  async checkClientConnection(client) {
+    try {
+      // Tentar buscar informações do host
+      const hostDevice = await client.getHostDevice();
+      return !!hostDevice;
+    } catch (error) {
+      return false;
+    }
+  }
+
+  // ✅ MODIFICAR initializeFromDatabase
   async initializeFromDatabase() {
     try {
       logger.info("Inicializando sessões do banco de dados...");
@@ -23,48 +78,39 @@ class WhatsAppService {
 
       for (const dbSession of dbSessions) {
         if (dbSession.status === "connected") {
-          logger.info("Tentando restaurar sessão conectada", dbSession.name);
+          logger.info("Restaurando sessão:", dbSession.name);
           try {
-            const client = await this.createSession(dbSession.name, true);
-
+            // ✅ USAR NOME REAL
+            const client = await this.createSession(dbSession.name, false);
+            
             if (client) {
               this.clients.set(dbSession.name, client);
-              logger.info(
-                `Cliente da sessão ${dbSession.name} restaurado com sucesso`
-              );
               await this.syncUnreadMessages(dbSession.name, client);
             }
           } catch (error) {
-            logger.error("Erro ao restaurar sessão " + dbSession.name, error);
-            // Atualiza status quando falhar
+            logger.error("Erro ao restaurar sessão:", error);
             await sessionRepository.updateStatus(dbSession.name, "failed");
           }
         }
       }
+
+      // ✅ INICIAR MONITORAMENTO
+      this.startHealthCheck();
+      
     } catch (error) {
-      logger.error("Erro ao inicializar do banco de dados:", error);
+      logger.error("Erro ao inicializar:", error);
     }
   }
 
   async createSession(sessionName, isReconnect = false) {
     try {
-      logger.info(`Criando sessão: ${sessionName}`);
+      logger.info(
+        `${isReconnect ? "Reconectando" : "Criando"} sessão: ${sessionName}`
+      );
 
-      // 🔥 SOLUÇÃO: Usar nome temporário para evitar conflito de userDataDir
-      let actualSessionName = sessionName;
-      let tempSessionName = null;
-
-      if (isReconnect) {
-        tempSessionName = `${sessionName}_reconnect_${Date.now()}`;
-        actualSessionName = tempSessionName;
-        logger.info(
-          `Usando nome temporário para reconexão: ${tempSessionName}`
-        );
-      }
-
-      // Salva no banco de dados com o nome REAL (não o temporário)
+      // ✅ SEMPRE usar o nome real
       await sessionRepository.updateOrCreate(sessionName, {
-        name: actualSessionName,
+        name: sessionName,
         status: "initializing",
         lastActivity: new Date(),
       });
@@ -76,103 +122,64 @@ class WhatsAppService {
       });
 
       const client = await create({
-        // 🔥 Usar o nome temporário para a sessão do Puppeteer
-        session: actualSessionName,
+        session: sessionName, // ✅ Nome real
+        userDataDir: path.join(process.cwd(), "tokens", sessionName), // ✅ Nome real
+
+        // ✅ ADICIONE ESTAS OPÇÕES CRÍTICAS
+        autoClose: 60000,
+        createPathFileToken: true,
+        waitForLogin: true,
+
         catchQR: (base64Qr, asciiQR, attempts, urlCode) => {
           logger.info("QR Code recebido");
-          console.log(
-            "🚀 base64Qr (primeiros 50 chars):",
-            base64Qr?.substring(0, 50)
-          );
-          console.log("📌 urlCode:", urlCode);
-
-          // Salva QR code no banco com o nome REAL
           sessionRepository.updateOrCreate(sessionName, {
             qrCode: base64Qr,
             status: "awaiting_qr",
           });
-
           this.emitQRCode(sessionName, base64Qr);
         },
-        statusFind: (statusSession, session) => {
-          logger.info(">>>>>>>>>>>> statusFind <<<<<<<<<<<<");
-          logger.info(`Status da sessão ${sessionName}: ${statusSession}`);
 
-          // Atualiza status no banco com nome REAL
-          sessionRepository.updateStatus(sessionName, statusSession);
-
-          this.emitStatus(sessionName, statusSession);
-        },
-        onLoadingScreen: (percent, message) => {
-          logger.info(`Carregando: ${percent}% - ${message}`);
-          this.emitLoading(sessionName, percent, message);
-        },
-        headless: true,
-        devtools: false,
-        useChrome: true,
-        debug: false,
-        logQR: true,
-        browserArgs: [
-          "--no-sandbox",
-          "--disable-setuid-sandbox",
-          "--disable-dev-shm-usage",
-          "--disable-accelerated-2d-canvas",
-          "--no-first-run",
-          "--no-zygote",
-          "--single-process",
-          "--disable-gpu",
-        ],
+        // ... resto do código
       });
 
+      // ✅ ADICIONAR TRATAMENTO DE DESCONEXÃO
       client.onStateChange(async (state) => {
-        logger.info(">>>>>>> onStateChange <<<<<<<");
         logger.info(`Estado da sessão ${sessionName}: ${state}`);
 
-        // Atualiza estado no banco com nome REAL
-        sessionRepository.updateStatus(sessionName, state);
-
-        this.emitStateChange(sessionName, state);
-
         if (state === "CONFLICT" || state === "UNLAUNCHED") {
-          client.useHere();
+          await client.useHere();
         }
-        if (state == "CONNECTED") {
-          logger.info(`Sessão ${sessionName} conectada com sucesso!`);
+
+        if (state === "CONNECTED") {
+          logger.info(`Sessão ${sessionName} conectada!`);
           this.clients.set(sessionName, client);
-
-          // 🔥 IMPORTANTE: Se foi reconexão, renomear a pasta de volta
-          if (isReconnect && tempSessionName) {
-            this.renameSessionFolder(tempSessionName, sessionName);
-          }
-
-          console.log(`✅ Cliente conectado: ${client.isConnected()}`);
-          console.log(
-            `✅ Cliente adicionado ao mapa: ${this.clients.has(sessionName)}`
-          );
-
           await sessionRepository.updateOrCreate(sessionName, {
             status: "connected",
             lastActivity: new Date(),
             qrCode: null,
           });
-          this.emitSuccess(sessionName, "Sessão conectada com sucesso!");
+          this.emitSuccess(sessionName, "Sessão conectada!");
         }
-      });
 
-      client.on("connected", async () => {
-        logger.info(
-          `Sessão cliente.on >>>>> ${sessionName} conectada com sucesso.`
-        );
-        await this.syncUnreadMessages(sessionName, client);
+        // ✅ TRATAR DESCONEXÕES
+        if (state === "DISCONNECTED" || state === "TIMEOUT") {
+          logger.warn(`Sessão ${sessionName} desconectada. Estado: ${state}`);
+          await sessionRepository.updateStatus(sessionName, "disconnected");
+          this.clients.delete(sessionName);
+
+          // Tentar reconectar após 5 segundos
+          setTimeout(() => {
+            this.reconnectSession(sessionName);
+          }, 5000);
+        }
       });
 
       return client;
     } catch (error) {
-      logger.error(`Erro ao criar sessão ${sessionName}:`, error);
+      logger.error("Erro ao criar sessão >>> " + sessionName, error);
       throw error;
     }
   }
-
   async syncUnreadMessages(sessionName, client) {
     try {
       logger.info(
@@ -200,9 +207,6 @@ class WhatsAppService {
 
   renameSessionFolder(oldName, newName) {
     try {
-      const fs = require("fs").promises;
-      const path = require("path");
-
       const tokensDir = path.join(process.cwd(), "tokens");
       const oldPath = path.join(tokensDir, oldName);
       const newPath = path.join(tokensDir, newName);
@@ -213,7 +217,7 @@ class WhatsAppService {
       }
     } catch (error) {
       logger.warn(
-        `Não foi possível renomear pasta da sessão: ${error.message}`
+        'Não foi possível renomear pasta da sessão: ' + error.message
       );
     }
   }
@@ -692,49 +696,37 @@ class WhatsAppService {
 
   async reconnectSession(sessionName) {
     try {
-      logger.info(`Tentando reconectar sessão: ${sessionName}`);
+      logger.info(`Reconectando sessão: ${sessionName}`);
 
-      // Verificar se a sessão existe no banco
       const dbSession = await sessionRepository.findByName(sessionName);
       if (!dbSession) {
-        throw new Error(`Sessão ${sessionName} não encontrada no banco`);
+        throw new Error(`Sessão ${sessionName} não encontrada`);
       }
 
-      // 1. Fechar e limpar qualquer instância existente
+      // Limpar cliente existente
       const existingClient = this.clients.get(sessionName);
       if (existingClient) {
-        logger.info(`Fechando cliente existente para ${sessionName}`);
         try {
           await existingClient.close();
         } catch (error) {
-          logger.warn(`Erro ao fechar cliente existente:`, error);
+          logger.warn(`Erro ao fechar cliente:`, error);
         }
         this.clients.delete(sessionName);
       }
 
-      if (this.sessions.has(sessionName)) {
-        this.sessions.delete(sessionName);
-      }
+      this.sessions.delete(sessionName);
 
-      // 2. Matar processos do Chrome
-      await this.killChromeProcesses(sessionName);
-      await new Promise((resolve) => setTimeout(resolve, 3000));
+      // Aguardar para garantir limpeza
+      await new Promise((resolve) => setTimeout(resolve, 2000));
 
-      // 3. Atualizar status para connecting
-      await sessionRepository.updateStatus(sessionName, "connecting");
-      this.emitStatus(sessionName, "connecting");
+      // ✅ Criar sessão COM O NOME REAL
+      const client = await this.createSession(sessionName, true);
 
-      // 4. 🔥 AGORA: Criar sessão em modo de reconexão
-      const result = await this.createSession(sessionName, true); // true = isReconnect
-
-      logger.info(`Sessão ${sessionName} reconectada com sucesso`);
-      this.emitSuccess(sessionName, "Sessão reconectada com sucesso");
-      return result;
+      logger.info(`Sessão ${sessionName} reconectada!`);
+      return client;
     } catch (error) {
-      logger.error(`Erro ao reconectar sessão ${sessionName}:`, error);
+      logger.error(`Erro ao reconectar ${sessionName}:`, error);
       await sessionRepository.updateStatus(sessionName, "failed");
-      this.emitStatus(sessionName, "failed");
-      this.emitError(sessionName, `Erro ao reconectar: ${error.message}`);
       throw error;
     }
   }
@@ -797,6 +789,25 @@ class WhatsAppService {
           client.isConnected() ? "Conectado" : "Desconectado"
         }`
       );
+    }
+  }
+
+  emitAck(sessionName, status, message) {
+    if (this.io) {
+      this.io.to(sessionName).emit("messageAck", {
+        session: sessionName,
+        status, // sent, delivered, read, played
+        message,
+      });
+    }
+  }
+
+  emitMessageReplied(sessionName, message) {
+    if (this.io) {
+      this.io.to(sessionName).emit("messageReplied", {
+        session: sessionName,
+        message,
+      });
     }
   }
 }
