@@ -1,5 +1,6 @@
 import logger from "../utils/logger.js";
 import whatsappService from "./whatsapp.service.js";
+import ticketRepository from '../repositories/ticket.repository.js'
 
 export const initSocket = (io) => {
   io.on("connection", (socket) => {
@@ -66,11 +67,37 @@ export const initSocket = (io) => {
         );
 
         const result = await whatsappService.syncMessages(sessionName, contactNumber);
-
         socket.emit("recoveryMessages", {
           ...result,
         });
 
+       
+      } catch (error) {
+        logger.error(`Erro na reconexão via socket:`, error);
+        socket.emit("sessionReconnectError", {
+          error: error.message,
+          session: data.sessionName,
+        });
+      }
+    });
+   
+    socket.on("sendMessage", async (data) => {
+      try {
+        const { sessionName, contactNumber, message, ticketId } = data;
+        logger.info(
+          `Socket ${socket.id} enviando Mensagem: ${sessionName}`
+        );
+
+        const result = await whatsappService.sendMessage(sessionName, contactNumber, message);
+        if (ticketId) {
+          await ticketRepository.updateStatus(ticketId, 'in_progress')
+        }
+        /*
+        socket.emit("sentMessage", {
+          ...result,
+        });
+        */
+       socket.emit('rescueMessages', data)
        
       } catch (error) {
         logger.error(`Erro na reconexão via socket:`, error);

@@ -36,6 +36,45 @@ export const findById = async (req, res) => {
   }
 };
 
+export const updateStatus = async (req, res) => {
+  try {
+    const { id, status } = req.params;
+    if (!id) {
+      return res.status(422).json({ message: "ID not founded" }, req);
+    }
+    if (!status) {
+      return res.status(422).json({ message: "status not founded" }, req);
+    }
+    
+    await ticketRepository.updateStatus(id, status);
+   
+    return res.status(201).json({ message: 'ticket deleted by successfully '});
+  } catch (err) {
+    logger.error("destroy error", err);
+    return res.status(500).json({ message: "Internal server error" });
+  }
+};
+
+export const update = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { body } = req
+    if (!id) {
+      return res.status(422).json({ message: "ID not founded" }, req);
+    }
+    if (!body) {
+      return res.status(422).json({ message: "The body is empty" }, req);
+    }
+
+    const updated = await ticketRepository.update(id, body);
+   
+    return res.status(200).json(updated);
+  } catch (err) {
+    logger.error("destroy error", err);
+    return res.status(500).json({ message: "Internal server error" });
+  }
+};
+
 export const destroy = async (req, res) => {
   try {
     const { id } = req.params;

@@ -6,8 +6,9 @@ const router = Router();
 
 router.get('/', authenticate, ticketController.findAll);
 //router.post('/', authenticate, ticketController.create);
-//router.put('/:id', authenticate, ticketController.update);
+router.put('/:id', authenticate, ticketController.update);
 router.get('/:id', authenticate, ticketController.findById);
+router.patch('/:id/:status', authenticate, ticketController.updateStatus);
 router.delete('/:id/destroy', authenticate, ticketController.destroy);
 
 

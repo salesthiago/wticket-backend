@@ -35,15 +35,16 @@ class ContactRepository {
     }
   }
 
-  async updateOrCreate(phone, data) {
+  async updateOrCreate(number, data) {
     try {
       return await Contact.findOneAndUpdate(
-        { phone },
+        { sessionName: data.sessionName, phone: number },
         { $set: { ...data } },
         { new: true, upsert: true }
       );
     } catch (error) {
-      throw new Error(`Erro ao atualizar/criar sessão: ${error.message}`);
+      //throw new Error(`Erro ao atualizar/criar contato: ${error.message}`);
+      throw error ;
     }
   }
 

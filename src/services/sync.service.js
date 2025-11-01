@@ -2,6 +2,7 @@ import contactRepository from "../repositories/contact.repository.js";
 import ticketRepository from "../repositories/ticket.repository.js";
 import messageRepository from "../repositories/message.repository.js";
 import logger from "../utils/logger.js";
+import { onlyNumbers } from "../utils/formatter.js";
 
 class SyncService {
   constructor() {
@@ -9,69 +10,125 @@ class SyncService {
   }
 
   async syncContacts(sessionName, client) {
-    try {
-      if (this.isSyncing) {
-        logger.warn(
-          `Sincronização já em andamento para sessão: ${sessionName}`
-        );
-        return;
-      }
-
-      this.isSyncing = true;
-      logger.info(
-        `Iniciando sincronização de contatos para sessão: ${sessionName}`
+  try {
+    if (this.isSyncing) {
+      logger.warn(
+        `Sincronização já em andamento para sessão: ${sessionName}`
       );
-
-      // Busca todos os contatos do WhatsApp
-      const contacts = await client.getAllContacts();
-      logger.info(`Encontrados ${contacts.length} contatos para sincronizar`);
-
-      let syncedCount = 0;
-      let errorCount = 0;
-
-      for (const contact of contacts) {
-        console.log(contact, "<<<<< contact");
-        try {
-          const contactData = {
-            name: contact.name || contact.pushname || contact.shortName,
-            sessionName: sessionName,
-          };
-
-          await contactRepository.updateOrCreate(contact.id.user, contactData);
-          syncedCount++;
-          /*
-          await this.createAutoTicket(
-            sessionName,
-            contact.id.user,
-            contactData.name
-          );
-          */
-        } catch (error) {
-          logger.error(
-            `Erro ao sincronizar contato ${contact.id.user}:`,
-            error
-          );
-          errorCount++;
-        }
-      }
-
-      logger.info(
-        `Sincronização concluída: ${syncedCount} contatos sincronizados, ${errorCount} erros`
-      );
-
-      return {
-        success: true,
-        syncedCount,
-        errorCount,
-        total: contacts.length,
-      };
-    } catch (error) {
-      logger.error(`Erro na sincronização de contatos:`, error);
-      throw error;
-    } finally {
-      this.isSyncing = false;
+      return;
     }
+
+    this.isSyncing = true;
+    logger.info(
+      `Iniciando sincronização de contatos para sessão: ${sessionName}`
+    );
+
+    const contacts = await client.getAllContacts();
+    logger.info(`Encontrados ${contacts.length} contatos para sincronizar`);
+
+    let syncedCount = 0;
+    let errorCount = 0;
+    let skippedCount = 0;
+
+    for (const contact of contacts) {
+      try {
+        
+        if (!contact.id || contact.id?.server !== "c.us") {
+          logger.debug(
+            `Ignorando contato não-usuário: ${contact.id?._serialized || 'ID não disponível'}`
+          );
+          skippedCount++;
+          continue;
+        }
+        logger.info('verificando contato ', contact)
+        // Validação do número - CRÍTICO
+        const number = contact.id.user;
+        if (!number || typeof number !== 'string' || number.trim() === '') {
+          logger.warn(
+            `Número inválido ou vazio para contato: ${contact.id?._serialized || 'ID não disponível'}`
+          );
+          skippedCount++;
+          continue;
+        }
+
+        // Remove caracteres não numéricos e valida se tem comprimento mínimo
+        const cleanNumber = number.replace(/\D/g, '');
+        if (cleanNumber.length < 10) {
+          logger.warn(
+            `Número muito curto: ${cleanNumber} (original: ${number})`
+          );
+          skippedCount++;
+          continue;
+        }
+
+        console.log('number validado:', cleanNumber);
+        const name =
+          contact.name || contact.pushname || contact.formattedName || cleanNumber;
+
+        // Avatar
+        let avatar = null;
+
+        if (contact.profilePicThumbObj) {
+          if (typeof contact.profilePicThumbObj.imgFull === "string") {
+            avatar = contact.profilePicThumbObj.imgFull;
+          } else if (typeof contact.profilePicThumbObj.img === "string") {
+            avatar = contact.profilePicThumbObj.img;
+          } else if (typeof contact.profilePicThumbObj.eurl === "string") {
+            avatar = contact.profilePicThumbObj.eurl;
+          }
+        }
+
+        // Se não encontrou nada, tenta pegar do servidor
+        if (!avatar) {
+          try {
+            const picUrl = await client.getProfilePicFromServer(
+              contact.id._serialized
+            );
+            if (typeof picUrl === "string") {
+              avatar = picUrl;
+            }
+          } catch (err) {
+            logger.debug(`Sem avatar disponível para ${cleanNumber}`);
+          }
+        }
+
+        const contactData = {
+          sessionName,
+          phone: cleanNumber,
+          name,
+          avatar,
+        };
+
+        await contactRepository.updateOrCreate(cleanNumber, contactData);
+        syncedCount++;
+
+      } catch (error) {
+        logger.error(
+          `Erro ao sincronizar contato ${contact.id?.user}:`,
+          error
+        );
+        errorCount++;
+      }
+    }
+
+    logger.info(
+      `Sincronização concluída: ${syncedCount} contatos sincronizados, ${errorCount} erros, ${skippedCount} ignorados`
+    );
+
+    return {
+      success: true,
+      syncedCount,
+      errorCount,
+      skippedCount,
+      total: contacts.length,
+    };
+  } catch (error) {
+    logger.error(`Erro na sincronização de contatos:`, error);
+    throw error;
+  } finally {
+    this.isSyncing = false;
   }
+}
 
   async createAutoTicket(
     sessionName,
