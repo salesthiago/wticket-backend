@@ -41,7 +41,7 @@ jobs:
           cp -r node_modules deploy-package/
           cp package.json deploy-package/
           cp package-lock.json deploy-package/
-          cp ecosystem.config.js deploy-package/
+          cp ecosystem.config.cjs deploy-package/
 
           # Criar arquivo .env de exemplo (não incluir o real por segurança)
           cat > deploy-package/.env.example << 'EOF'
@@ -124,7 +124,7 @@ jobs:
             pm2 delete wticket-backend 2>/dev/null || true
 
             # Iniciar com PM2
-            pm2 start ecosystem.config.js
+            pm2 start ecosystem.config.cjs
 
             # Salvar configuração do PM2
             pm2 save
