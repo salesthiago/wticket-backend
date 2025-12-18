@@ -1,6 +1,0 @@
-2025/10/11-16:30:57.098 9b51a Reusing MANIFEST /Users/thiagosales/primodev/wticket/backend/tokens/wticket1/Default/Local Storage/leveldb/MANIFEST-000001
-2025/10/11-16:30:57.107 9b51a Recovering log #8
-2025/10/11-16:30:57.108 9b51a Reusing old log /Users/thiagosales/primodev/wticket/backend/tokens/wticket1/Default/Local Storage/leveldb/000008.log 
-2025/10/11-16:32:57.759 9b51d Level-0 table #12: started
-2025/10/11-16:32:57.764 9b51d Level-0 table #12: 22910 bytes OK
-2025/10/11-16:32:57.767 9b51d Delete type=0 #8
