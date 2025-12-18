@@ -6,6 +6,12 @@
   "scripts": {
     "start": "node src/server.js",
     "dev": "nodemon src/server.js",
+    "seed": "node src/scripts/seed.js",
+    "seed:bot": "node src/seeds/bot-appointment.seed.js",
+    "seed:church": "node src/seeds/bot-church-all.seed.js",
+    "seed:church:main": "node src/seeds/bot-church-main.seed.js",
+    "seed:church:torre": "node src/seeds/bot-torre-oracao.seed.js",
+    "seed:church:voluntario": "node src/seeds/bot-voluntario.seed.js",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "keywords": [],

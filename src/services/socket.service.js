@@ -1,6 +1,7 @@
 import logger from "../utils/logger.js";
 import whatsappService from "./whatsapp.service.js";
 import ticketRepository from '../repositories/ticket.repository.js'
+import botAgendaService from './bot-agenda.service.js';
 
 export const initSocket = (io) => {
   io.on("connection", (socket) => {
@@ -71,7 +72,7 @@ export const initSocket = (io) => {
           ...result,
         });
 
-       
+
       } catch (error) {
         logger.error(`Erro na reconexão via socket:`, error);
         socket.emit("sessionReconnectError", {
@@ -80,7 +81,7 @@ export const initSocket = (io) => {
         });
       }
     });
-   
+
     socket.on("sendMessage", async (data) => {
       try {
         const { sessionName, contactNumber, message, ticketId } = data;
@@ -97,13 +98,66 @@ export const initSocket = (io) => {
           ...result,
         });
         */
-       socket.emit('rescueMessages', data)
-       
+        socket.emit('rescueMessages', data)
+
       } catch (error) {
         logger.error(`Erro na reconexão via socket:`, error);
         socket.emit("sessionReconnectError", {
           error: error.message,
           session: data.sessionName,
+        });
+      }
+    });
+
+    socket.on("botMessage", async (data) => {
+      try {
+        const { sessionName, contactNumber, message, contactId } = data;
+
+        logger.info(`Bot processando mensagem de ${contactNumber}`);
+
+        const result = await botAgendaService.processMessage(
+          sessionName,
+          contactNumber,
+          message,
+          contactId
+        );
+
+        if (result) {
+          // Envia a resposta do bot
+          await whatsappService.sendMessage(sessionName, contactNumber, result.message);
+
+          socket.emit("botResponse", {
+            session: sessionName,
+            contact: contactNumber,
+            response: result.message,
+            shouldContinue: result.shouldContinue,
+            nextStep: result.nextStep,
+            appointment: result.appointment,
+            ticket: result.ticket
+          });
+
+          // Se houver próxima pergunta, envia automaticamente
+          if (result.nextStep) {
+            let questionMessage = result.nextStep.question;
+
+            // Se houver opções, formata a mensagem
+            if (result.nextStep.options && result.nextStep.options.length > 0) {
+              questionMessage += '\n\n';
+              result.nextStep.options.forEach(opt => {
+                questionMessage += `${opt.value} - ${opt.text}\n`;
+              });
+            }
+
+            await whatsappService.sendMessage(sessionName, contactNumber, questionMessage);
+          }
+        }
+
+      } catch (error) {
+        logger.error(`Erro no bot via socket:`, error);
+        socket.emit("botError", {
+          error: error.message,
+          session: data.sessionName,
+          contact: data.contactNumber
         });
       }
     });
