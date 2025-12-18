@@ -1,0 +1,424 @@
+import botConfigRepository from '../repositories/bot-config.repository.js';
+import autoResponseRepository from '../repositories/auto-response.repository.js';
+import appointmentRepository from '../repositories/appointment.repository.js';
+import ticketRepository from '../repositories/ticket.repository.js';
+import logger from '../utils/logger.js';
+
+class BotAgendaService {
+  constructor() {
+    this.sessions = new Map(); // Armazena o estado de cada conversa
+  }
+
+  // Inicializa ou recupera a sessão de conversa do usuário
+  getOrCreateSession(phone) {
+    if (!this.sessions.has(phone)) {
+      this.sessions.set(phone, {
+        phone,
+        step: 0,
+        data: {},
+        startedAt: new Date()
+      });
+    }
+    return this.sessions.get(phone);
+  }
+
+  // Limpa a sessão após finalizar
+  clearSession(phone) {
+    this.sessions.delete(phone);
+  }
+
+  // Processa a mensagem recebida
+  async processMessage(sessionName, phone, message, contactId) {
+    try {
+      // Busca o bot de agenda
+      const botConfig = await botConfigRepository.findByName('Bot Agenda');
+      
+      if (!botConfig || !botConfig.enabled) {
+        return null; // Bot desabilitado
+      }
+
+      // Verifica horário de funcionamento
+      if (!this.isBusinessHours(botConfig.businessHours)) {
+        return {
+          message: botConfig.businessHours.offHoursMessage || 
+                   'Estamos fora do horário de atendimento. Nosso horário é das 9h às 18h.',
+          shouldContinue: false
+        };
+      }
+
+      const session = this.getOrCreateSession(phone);
+      
+      // Se é a primeira mensagem, envia a boas-vindas
+      if (session.step === 0) {
+        session.contactId = contactId;
+        session.sessionName = sessionName;
+        session.step = 1;
+        return {
+          message: botConfig.welcomeMessage,
+          shouldContinue: true,
+          nextStep: await this.getNextQuestion(botConfig, 1)
+        };
+      }
+
+      // Processa a resposta do usuário
+      return await this.processStep(botConfig, session, message);
+
+    } catch (error) {
+      logger.error('Erro ao processar mensagem do bot:', error);
+      throw error;
+    }
+  }
+
+  // Processa cada etapa da conversa
+  async processStep(botConfig, session, message) {
+    const autoResponses = await autoResponseRepository.findByBotConfig(botConfig._id);
+    const currentResponse = autoResponses.find(ar => ar.priority === session.step);
+
+    if (!currentResponse) {
+      return {
+        message: 'Desculpe, ocorreu um erro. Vamos recomeçar.',
+        shouldContinue: false
+      };
+    }
+
+    // Valida e armazena a resposta
+    const validation = this.validateResponse(currentResponse, message);
+    
+    if (!validation.valid) {
+      return {
+        message: validation.error,
+        shouldContinue: true,
+        retryStep: true
+      };
+    }
+
+    // Armazena a resposta
+    session.data[currentResponse.action] = validation.value;
+
+    // Verifica se é a última etapa
+    const nextResponse = autoResponses.find(ar => ar.priority === session.step + 1);
+    
+    if (!nextResponse) {
+      // Finaliza e cria o agendamento
+      return await this.finalizeAppointment(session);
+    }
+
+    // Avança para próxima etapa
+    session.step++;
+    
+    return {
+      message: currentResponse.answer,
+      shouldContinue: true,
+      nextStep: {
+        question: nextResponse.question,
+        triggerType: nextResponse.triggerType,
+        options: nextResponse.options
+      }
+    };
+  }
+
+  // Valida a resposta do usuário
+  validateResponse(autoResponse, message) {
+    let result = { valid: true, value: message };
+
+    // Validação por tipo
+    switch (autoResponse.triggerType) {
+      case 'text':
+        if (!message || message.trim().length < 3) {
+          return {
+            valid: false,
+            error: 'Por favor, forneça uma resposta válida com pelo menos 3 caracteres.'
+          };
+        }
+        result.value = message.trim();
+        break;
+
+      case 'date':
+        const dateMatch = message.match(/(\d{2})\/(\d{2})\/(\d{4})/);
+        if (!dateMatch) {
+          return {
+            valid: false,
+            error: 'Por favor, use o formato DD/MM/AAAA (ex: 15/12/2024)'
+          };
+        }
+
+        const [, day, month, year] = dateMatch;
+        const date = new Date(year, month - 1, day);
+
+        if (isNaN(date.getTime())) {
+          return {
+            valid: false,
+            error: 'Data inválida. Por favor, verifique os valores.'
+          };
+        }
+
+        result.value = date;
+        break;
+
+      case 'time':
+        const timeMatch = message.match(/^([01]\d|2[0-3]):([0-5]\d)$/);
+        if (!timeMatch) {
+          return {
+            valid: false,
+            error: 'Por favor, use o formato HH:mm (ex: 14:30)'
+          };
+        }
+        result.value = message;
+        break;
+
+      case 'datetime':
+        // Formato: DD/MM/AAAA HH:mm
+        const datetimeMatch = message.match(/(\d{2})\/(\d{2})\/(\d{4})\s+([01]\d|2[0-3]):([0-5]\d)/);
+        if (!datetimeMatch) {
+          return {
+            valid: false,
+            error: 'Por favor, use o formato DD/MM/AAAA HH:mm (ex: 15/12/2024 14:30)'
+          };
+        }
+
+        const [, d, m, y, h, min] = datetimeMatch;
+        const datetime = new Date(y, m - 1, d, h, min);
+        result.value = datetime;
+        break;
+
+      case 'option':
+        const option = autoResponse.options.find(
+          opt => opt.value === message || opt.text.toLowerCase() === message.toLowerCase()
+        );
+
+        if (!option) {
+          const optionsList = autoResponse.options.map(o => `${o.value} - ${o.text}`).join('\n');
+          return {
+            valid: false,
+            error: `Por favor, escolha uma das opções:\n${optionsList}`
+          };
+        }
+
+        result.value = option.value;
+        result.option = option;
+        break;
+
+      case 'phone':
+        const phoneMatch = message.match(/^(?:\+?55\s?)?(?:\(?\d{2}\)?\s?)?\d{4,5}-?\d{4}$/);
+        if (!phoneMatch) {
+          return {
+            valid: false,
+            error: 'Por favor, forneça um telefone válido (ex: (11) 98765-4321)'
+          };
+        }
+        result.value = message.replace(/\D/g, '');
+        break;
+
+      case 'email':
+        const emailMatch = message.match(/^[^\s@]+@[^\s@]+\.[^\s@]+$/);
+        if (!emailMatch) {
+          return {
+            valid: false,
+            error: 'Por favor, forneça um e-mail válido'
+          };
+        }
+        result.value = message.toLowerCase().trim();
+        break;
+
+      case 'number':
+        const num = parseFloat(message);
+        if (isNaN(num)) {
+          return {
+            valid: false,
+            error: 'Por favor, forneça um número válido'
+          };
+        }
+        result.value = num;
+        break;
+
+      default:
+        result.value = message;
+    }
+
+    // Validações customizadas
+    if (autoResponse.validations && autoResponse.validations.length > 0) {
+      for (const validation of autoResponse.validations) {
+        const customValidation = this.applyCustomValidation(validation, result.value, autoResponse.triggerType);
+        if (!customValidation.valid) {
+          return customValidation;
+        }
+      }
+    }
+
+    return result;
+  }
+
+  // Aplica validações customizadas
+  applyCustomValidation(validation, value, triggerType) {
+    switch (validation.type) {
+      case 'minLength':
+        if (typeof value === 'string' && value.length < validation.value) {
+          return {
+            valid: false,
+            error: validation.errorMessage || `Mínimo de ${validation.value} caracteres`
+          };
+        }
+        break;
+
+      case 'maxLength':
+        if (typeof value === 'string' && value.length > validation.value) {
+          return {
+            valid: false,
+            error: validation.errorMessage || `Máximo de ${validation.value} caracteres`
+          };
+        }
+        break;
+
+      case 'regex':
+        const regex = new RegExp(validation.value);
+        if (typeof value === 'string' && !regex.test(value)) {
+          return {
+            valid: false,
+            error: validation.errorMessage || 'Formato inválido'
+          };
+        }
+        break;
+
+      case 'minValue':
+        if (typeof value === 'number' && value < validation.value) {
+          return {
+            valid: false,
+            error: validation.errorMessage || `Valor mínimo: ${validation.value}`
+          };
+        }
+        break;
+
+      case 'maxValue':
+        if (typeof value === 'number' && value > validation.value) {
+          return {
+            valid: false,
+            error: validation.errorMessage || `Valor máximo: ${validation.value}`
+          };
+        }
+        break;
+
+      case 'futureDate':
+        if (value instanceof Date) {
+          const today = new Date();
+          today.setHours(0, 0, 0, 0);
+          if (value < today) {
+            return {
+              valid: false,
+              error: validation.errorMessage || 'A data deve ser futura'
+            };
+          }
+        }
+        break;
+
+      case 'businessDays':
+        if (value instanceof Date) {
+          const dayOfWeek = value.getDay();
+          // 0 = Domingo, 6 = Sábado
+          if (dayOfWeek === 0 || dayOfWeek === 6) {
+            return {
+              valid: false,
+              error: validation.errorMessage || 'Por favor, escolha um dia útil (segunda a sexta)'
+            };
+          }
+        }
+        break;
+    }
+
+    return { valid: true, value };
+  }
+
+  // Finaliza e cria o agendamento
+  async finalizeAppointment(session) {
+    try {
+      // Prepara os dados do agendamento
+      const appointmentData = {
+        contactId: session.contactId,
+        phone: session.phone,
+        scheduledDate: session.data.scheduledDate || session.data.date,
+        scheduledTime: session.data.scheduledTime || session.data.time || '09:00',
+        description: session.data.description,
+        service: session.data.service || null,
+        status: 'scheduled',
+        reminderSent: false,
+        botData: session.data // Armazena todos os dados coletados
+      };
+
+      // Cria o agendamento
+      const appointment = await appointmentRepository.create(appointmentData);
+
+      // Cria um ticket já fechado
+      const ticket = await ticketRepository.create({
+        contactId: session.contactId,
+        phone: session.phone,
+        sessionName: session.sessionName,
+        status: 'closed',
+        subject: 'Agendamento realizado via bot',
+        description: `Agendamento criado para ${appointment.scheduledDate.toLocaleDateString('pt-BR')} às ${appointment.scheduledTime} - ${appointment.description}`,
+        appointmentId: appointment._id,
+        closedAt: new Date(),
+        closedBy: 'bot'
+      });
+
+      // Limpa a sessão
+      this.clearSession(session.phone);
+
+      // Monta mensagem de confirmação
+      let confirmationMessage = `✅ *Agendamento confirmado!*\n\n`;
+      confirmationMessage += `📅 *Data:* ${appointment.scheduledDate.toLocaleDateString('pt-BR')}\n`;
+      confirmationMessage += `🕐 *Horário:* ${appointment.scheduledTime}\n`;
+
+      if (appointment.service) {
+        confirmationMessage += `🏥 *Serviço:* ${appointment.service}\n`;
+      }
+
+      confirmationMessage += `📝 *Descrição:* ${appointment.description}\n\n`;
+      confirmationMessage += `Você receberá um lembrete 24h antes do horário agendado.\n\n`;
+      confirmationMessage += `Obrigado! 😊`;
+
+      return {
+        message: confirmationMessage,
+        shouldContinue: false,
+        appointment,
+        ticket
+      };
+
+    } catch (error) {
+      logger.error('Erro ao finalizar agendamento:', error);
+      this.clearSession(session.phone);
+
+      return {
+        message: 'Desculpe, ocorreu um erro ao criar seu agendamento. Por favor, tente novamente mais tarde.',
+        shouldContinue: false,
+        error: true
+      };
+    }
+  }
+
+  // Obtém a próxima pergunta
+  async getNextQuestion(botConfig, step) {
+    const autoResponses = await autoResponseRepository.findByBotConfig(botConfig._id);
+    const nextResponse = autoResponses.find(ar => ar.priority === step);
+    
+    if (!nextResponse) return null;
+
+    return {
+      question: nextResponse.question,
+      triggerType: nextResponse.triggerType,
+      options: nextResponse.options
+    };
+  }
+
+  // Verifica horário comercial
+  isBusinessHours(businessHours) {
+    if (!businessHours || !businessHours.enabled) {
+      return true;
+    }
+
+    const now = new Date();
+    const currentTime = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
+    
+    return currentTime >= businessHours.startTime && currentTime <= businessHours.endTime;
+  }
+}
+
+export default new BotAgendaService();
