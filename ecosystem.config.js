@@ -1,4 +1,4 @@
-export default {
+module.exports = {
   apps: [{
     name: 'wticket-backend',
     script: './src/server.js',
