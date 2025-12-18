@@ -1,43 +1,47 @@
-import BotConfig from "../models/bot-config.model.js";
+import BotConfig from '../models/bot-config.model.js';
 
 class BotConfigRepository {
-  async create(data) {
-    try {
-      const botConfig = await BotConfig.create(data);
-      return botConfig
-    } catch (error) {
-      throw new Error(`Erro ao criar BotConfig: ${error.message}`);
-    }
+  async findAll({ query = {}, page = 0, rowsPerPage = 10 }) {
+    const skip = page * rowsPerPage;
+    const items = await BotConfig.find(query)
+      .populate('autoResponses')
+      .skip(skip)
+      .limit(rowsPerPage)
+      .sort({ createdAt: -1 });
+
+    const total = await BotConfig.countDocuments(query);
+
+    return {
+      items,
+      total,
+      page: page + 1,
+      rowsPerPage,
+      totalPages: Math.ceil(total / rowsPerPage)
+    };
+  }
+
+  async findByName(name) {
+    return await BotConfig.findOne({ name }).populate('autoResponses');
   }
 
   async findById(id) {
-    try {
-      return await BotConfig.findById(id);
-    } catch (error) {
-      throw new Error(`Erro ao buscar BotConfig: ${error.message}`);
-    }
+    return await BotConfig.findById(id).populate('autoResponses');
   }
 
-  async findAll({ query, page, rowsPerPage }) {
-    try {
-      return await BotConfig.find(query)
-        .limit(rowsPerPage)
-        .skip(rowsPerPage * page);
-    } catch (error) {
-      throw new Error(`Erro ao buscar ALL BotConfig: ${error.message}`);
-    }
+  async findEnabled() {
+    return await BotConfig.find({ enabled: true }).populate('autoResponses');
+  }
+
+  async create(data) {
+    return await BotConfig.create(data);
   }
 
   async update(id, data) {
-    try {
-      return await BotConfig.findOneAndUpdate(
-        { _id: id },
-        { $set: { ...data } },
-        { new: true, runValidators: true }
-      );
-    } catch (error) {
-      throw new Error(`Erro ao atualizar BotConfig: ${error.message}`);
-    }
+    return await BotConfig.findByIdAndUpdate(id, data, { new: true });
+  }
+
+  async destroy(id) {
+    return await BotConfig.findByIdAndDelete(id);
   }
 }
 

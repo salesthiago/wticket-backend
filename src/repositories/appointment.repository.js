@@ -1,51 +1,50 @@
-import Appointment from "../models/appointment.model.js";
+import Appointment from '../models/appointment.model.js';
 
 class AppointmentRepository {
   async create(data) {
-    try {
-      const appointment = new Appointment(data);
-      
-      return await appointment.save();
-    } catch (error) {
-      throw new Error(`Erro ao reservar Horário: ${error.message}`);
-    }
+    return await Appointment.create(data);
   }
 
-  async findById(id) {
-    try {
-      return await Appointment.findById(id);
-    } catch (error) {
-      throw new Error(`Erro ao buscar contato: ${error.message}`);
-    }
-  }
-  async findByNumber(_phone) {
-    try {
-      return await Appointment.findOne({ phone: _phone });
-    } catch (error) {
-      throw new Error(`Erro ao buscar reserva pelo numero do telefone : ${error.message}`);
-    }
+  async findByPhone(phone) {
+    return await Appointment.find({ phone }).sort({ scheduledDate: -1 });
   }
 
-  async findAll({ query, page, rowsPerPage }) {
-    try {
-      return await Appointment.find(query)
-        .limit(rowsPerPage)
-        .skip(rowsPerPage * page);
-    } catch (error) {
-      throw new Error(`Erro ao buscar reservas: ${error.message}`);
-    }
+  async findByDateRange(startDate, endDate) {
+    return await Appointment.find({
+      scheduledDate: {
+        $gte: startDate,
+        $lte: endDate
+      },
+      status: 'scheduled'
+    });
   }
 
   async update(id, data) {
-    try {
-      return await Appointment.findOneAndUpdate(
-        { _id: id },
-        { $set: { ...data } },
-        { new: true }
-      );
-    } catch (error) {
-      throw new Error(`Erro ao atualizar reserva: ${error.message}`);
-    }
+    return await Appointment.findByIdAndUpdate(id, data, { new: true });
+  }
+
+  async cancel(id) {
+    return await Appointment.findByIdAndUpdate(
+      id,
+      { status: 'cancelled' },
+      { new: true }
+    );
+  }
+
+  async findAvailableSlots(date) {
+    const startOfDay = new Date(date);
+    startOfDay.setHours(0, 0, 0, 0);
+    
+    const endOfDay = new Date(date);
+    endOfDay.setHours(23, 59, 59, 999);
+
+    return await Appointment.find({
+      scheduledDate: {
+        $gte: startOfDay,
+        $lte: endOfDay
+      },
+      status: 'scheduled'
+    });
   }
 }
 

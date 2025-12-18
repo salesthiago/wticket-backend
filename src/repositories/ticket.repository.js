@@ -249,7 +249,33 @@ class TicketRepository {
             ],
             thisWeek: [
               { $match: { createdAt: { $gte: startOfWeek } } },
-              { $group: { _id: '$status', count: { $sum: 1 } } }
+              {
+                $group: {
+                  _id: { $dayOfWeek: '$createdAt' },
+                  count: { $sum: 1 }
+                }
+              },
+              {
+                $project: {
+                  _id: 0,
+                  day: {
+                    $switch: {
+                      branches: [
+                        { case: { $eq: ['$_id', 1] }, then: 'sunday' },
+                        { case: { $eq: ['$_id', 2] }, then: 'monday' },
+                        { case: { $eq: ['$_id', 3] }, then: 'tuesday' },
+                        { case: { $eq: ['$_id', 4] }, then: 'wednesday' },
+                        { case: { $eq: ['$_id', 5] }, then: 'thursday' },
+                        { case: { $eq: ['$_id', 6] }, then: 'friday' },
+                        { case: { $eq: ['$_id', 7] }, then: 'saturday' }
+                      ],
+                      default: 'unknown'
+                    }
+                  },
+                  count: 1
+                }
+              },
+              { $sort: { '_id': 1 } }
             ],
             thisMonth: [
               { $match: { createdAt: { $gte: startOfMonth } } },

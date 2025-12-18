@@ -68,6 +68,7 @@ export const update = async (req, res) => {
       return res.status(422).json({ message: 'ID not founded' }, req);
     }
     const bot = await botConfigRepository.findById(id);
+
     if (!bot) return res.status(404).json({ message: 'Bot not founded!' });
 
     return res.json(bot).status(200);
@@ -78,13 +79,36 @@ export const update = async (req, res) => {
 
 }
 
-export const findResponsesByConfigId = async (req, res) => {
+export const remove = async (req, res) => {
   try {
     const { id } = req.params
     if (!id) {
       return res.status(422).json({ message: 'ID not founded' }, req);
     }
-    const bot = await autoResponseRepository.findByBotConfigId(id);
+
+    const bot = await botConfigRepository.findById(id);
+    if (!bot) return res.status(404).json({ message: 'Bot not founded!' });
+
+    // Remove todas as auto responses associadas
+    await autoResponseRepository.destroyByBotConfig(id);
+
+    // Remove o bot
+    await botConfigRepository.destroy(id);
+
+    return res.status(204).json({});
+  } catch (err) {
+    logger.error('botConfigController remove error', err);
+    return res.status(500).json({ message: 'Internal server error' });
+  }
+}
+
+export const findResponsesByConfigId = async (req, res) => {
+  try {
+    const { id } = req.params
+    if (!id) {
+      return res.status(422).json({ message: 'ID not founded' }, req);
+    } 
+    const bot = await autoResponseRepository.findByBotConfig(id);
     if (!bot) return res.status(404).json({ message: 'Bot not founded!' });
 
     return res.json(bot).status(200);
@@ -97,14 +121,39 @@ export const findResponsesByConfigId = async (req, res) => {
 export const insertAutoResponse = async (req, res) => {
   try {
     const { id } = req.params
+    const { question, answer } = req.body
     if (!id) {
       return res.status(422).json({ message: 'ID not founded' }, req);
     }
-    const bot = await autoResponseRepository.create(req.body);
+    if (!question) {
+      return res.status(422).json({ message: 'Question is required' })
+    }
+    if (!answer) {
+      return res.status(422).json({ message: 'Answer is required' })
+    }
     
-    return res.json(bot).status(200);
+    const bot = await autoResponseRepository.create({ ...req.body, botConfig: id });
+    
+    return res.status(200).json(bot);
   } catch (err) {
     logger.error('botConfigController error :: insertAutoResponse ---> ', err);
+    return res.status(500).json({ message: 'Internal server error' });
+  }
+}
+export const updateAutoResponse = async (req, res) => {
+  try {
+    const { id, bot } = req.params
+    if (!id) {
+      return res.status(422).json({ message: 'ID not founded' }, req);
+    }
+    if (!bot) {
+      return res.status(422).json({ message: 'BOT not founded' }, req);
+    }
+    const response = await autoResponseRepository.update(id, req.body);
+    
+    return res.json(response).status(200);
+  } catch (err) {
+    logger.error('botConfigController error :: updateAutoResponse ---> ', err);
     return res.status(500).json({ message: 'Internal server error' });
   }
 }
@@ -119,7 +168,7 @@ export const deleteAutoResponse = async (req, res) => {
     
     return res.json({}).status(204);
   } catch (err) {
-    logger.error('botConfigController error :: insertAutoResponse ---> ', err);
+    logger.error('botConfigController error :: deleteAutoResponse ---> ', err);
     return res.status(500).json({ message: 'Internal server error' });
   }
 }

@@ -11,4 +11,4 @@ const licenseSchema = new mongoose.Schema({
   hardwareId: String
 });
 
-module.exports = mongoose.model('License', licenseSchema);
+export default mongoose.model('License', licenseSchema);

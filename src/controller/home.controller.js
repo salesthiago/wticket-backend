@@ -38,7 +38,6 @@ export const ticketDashboard = async (req, res) => {
     }
 
     const dashboardData = await ticketRepository.dashboardByStatus(query);
-
     const timeAnalysis = await ticketRepository.dashboardWithTimeAnalysis(
       query
     );
