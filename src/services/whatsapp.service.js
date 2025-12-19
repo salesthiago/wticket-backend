@@ -230,31 +230,51 @@ class WhatsAppService {
         logger.warn(`[${sessionName}] Possível travamento no processo de inicialização`);
       }, timeoutMs);
 
+      // Verificar se já existe token salvo
+      const hasExistingToken = fs.existsSync(tokensPath) &&
+                               fs.existsSync(path.join(tokensPath, 'Default')) &&
+                               fs.readdirSync(tokensPath).length > 2; // Mais de 2 arquivos/pastas
+
+      logger.info(`[${sessionName}] 🔍 Sessão existente: ${hasExistingToken ? 'SIM' : 'NÃO'}`);
+
       const client = await create({
         session: sessionName,
         userDataDir: tokensPath,
 
-        // Configurações de timeout e comportamento
-        autoClose: timeoutMs, // 3 minutos ao invés de 1 minuto
+        // CRÍTICO: Configurações de timeout e comportamento
+        autoClose: hasExistingToken ? 0 : timeoutMs, // Sem timeout para sessões existentes
         createPathFileToken: true,
         waitForLogin: true,
         logQR: false,
+        disableSpins: true, // Desabilitar animações que podem travar
+        disableWelcome: true, // Desabilitar tela de boas-vindas
 
         // Configurações de Puppeteer
         puppeteerOptions: {
           headless: true,
           devtools: false,
           args: browserArgsConfig,
-          executablePath: process.env.CHROME_PATH || undefined, // Permitir path customizado
+          executablePath: process.env.CHROME_PATH || undefined,
+          // Configurações adicionais para evitar travamentos
+          defaultViewport: {
+            width: 1920,
+            height: 1080
+          },
+          ignoreHTTPSErrors: true,
+          timeout: timeoutMs,
         },
 
         // Callbacks de progresso
         statusFind: (statusSession) => {
-          logger.debug(`[${sessionName}] 🔍 Status Find: ${statusSession}`);
+          logger.info(`[${sessionName}] 🔍 Status Find: ${statusSession}`);
 
           // Emitir progresso via Socket.IO
           if (statusSession === 'inChat' || statusSession === 'isLogged') {
             logger.info(`[${sessionName}] ✅ Status positivo: ${statusSession}`);
+          }
+
+          if (statusSession === 'notLogged') {
+            logger.info(`[${sessionName}] ℹ️ Aguardando QR Code...`);
           }
         },
 
@@ -282,11 +302,6 @@ class WhatsAppService {
           logger.info(`[${sessionName}] ⏳ Carregando: ${percent}% - ${message}`);
           this.emitLoading(sessionName, percent, message);
         },
-
-        // IMPORTANTE: Desabilitar autoClose se já tiver token (sessão existente)
-        ...(fs.existsSync(tokensPath) && fs.readdirSync(tokensPath).length > 0 ? {
-          autoClose: 0, // Desabilitar autoClose para sessões existentes
-        } : {}),
       });
 
       clearTimeout(timeoutId); // Limpar timeout de segurança
