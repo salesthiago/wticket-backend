@@ -51,11 +51,26 @@ io.use((socket, next) => {
   }
 });
 
+logger.info("════════════════════════════════════════════════════════════");
+logger.info("🚀 INICIANDO SERVIDOR WTICKET");
+logger.info("════════════════════════════════════════════════════════════");
+logger.info(`📊 Porta: ${PORT}`);
+logger.info(`🔧 Ambiente: ${process.env.NODE_ENV || 'development'}`);
+logger.info(`📝 Nível de log: ${process.env.LOG_LEVEL || 'debug'}`);
+logger.info(`🌐 Frontend URL: ${process.env.FRONTEND_URL}`);
+logger.info("════════════════════════════════════════════════════════════\n");
+
+logger.info("🔌 Configurando Socket.IO no WhatsApp Service...");
 whatsappService.setSocketIO(io);
+
+logger.info("📦 Inicializando sessões do banco de dados...");
 whatsappService.initializeFromDatabase();
 
+logger.info("🔌 Inicializando Socket.IO handlers...");
 initSocket(io);
 
 server.listen(PORT, () => {
-  logger.info(`Server listening on port ${PORT}`);
+  logger.info("\n════════════════════════════════════════════════════════════");
+  logger.info(`✅ SERVIDOR RODANDO NA PORTA ${PORT}`);
+  logger.info("════════════════════════════════════════════════════════════\n");
 });

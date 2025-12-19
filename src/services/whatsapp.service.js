@@ -75,115 +75,325 @@ class WhatsAppService {
   // ✅ MODIFICAR initializeFromDatabase
   async initializeFromDatabase() {
     try {
-      logger.info("Inicializando sessões do banco de dados...");
+      logger.info("════════════════════════════════════════════════════════════");
+      logger.info("🚀 INICIALIZANDO SESSÕES DO BANCO DE DADOS");
+      logger.info("════════════════════════════════════════════════════════════");
+
       const dbSessions = await sessionRepository.findAll();
+      logger.info(`📊 Encontradas ${dbSessions.length} sessão(ões) no banco de dados`);
+
+      if (dbSessions.length === 0) {
+        logger.info("ℹ️ Nenhuma sessão encontrada no banco de dados");
+      }
 
       for (const dbSession of dbSessions) {
+        logger.info(`\n📋 Processando sessão: ${dbSession.name}`);
+        logger.info(`   Status atual: ${dbSession.status}`);
+        logger.info(`   Última atividade: ${dbSession.lastActivity}`);
+
         if (dbSession.status === "connected") {
-          logger.info("Restaurando sessão:", dbSession.name);
+          logger.info(`🔄 Restaurando sessão conectada: ${dbSession.name}`);
           try {
             // ✅ USAR NOME REAL
             const client = await this.createSession(dbSession.name, false);
-            
+
             if (client) {
               this.clients.set(dbSession.name, client);
+              logger.info(`✅ Sessão ${dbSession.name} restaurada com sucesso`);
+
+              logger.info(`📥 Sincronizando mensagens não lidas...`);
               await this.syncUnreadMessages(dbSession.name, client);
+            } else {
+              logger.warn(`⚠️ Cliente não foi criado para ${dbSession.name}`);
             }
           } catch (error) {
-            logger.error("Erro ao restaurar sessão:", error);
+            logger.error(`❌ Erro ao restaurar sessão ${dbSession.name}:`, error);
             await sessionRepository.updateStatus(dbSession.name, "failed");
           }
+        } else {
+          logger.debug(`⏭️ Ignorando sessão ${dbSession.name} (status: ${dbSession.status})`);
         }
       }
 
+      logger.info("\n════════════════════════════════════════════════════════════");
+      logger.info("✅ INICIALIZAÇÃO CONCLUÍDA");
+      logger.info("════════════════════════════════════════════════════════════\n");
+
       // ✅ INICIAR MONITORAMENTO
       this.startHealthCheck();
-      
+
     } catch (error) {
-      logger.error("Erro ao inicializar:", error);
+      logger.error("❌ ERRO CRÍTICO AO INICIALIZAR DO BANCO:", error);
     }
   }
 
   async createSession(sessionName, isReconnect = false) {
     try {
       logger.info(
-        `${isReconnect ? "Reconectando" : "Criando"} sessão: ${sessionName}`
+        `━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━`
+      );
+      logger.info(
+        `🚀 ${isReconnect ? "RECONECTANDO" : "CRIANDO"} SESSÃO: ${sessionName}`
+      );
+      logger.info(
+        `━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━`
       );
 
       // ✅ SEMPRE usar o nome real
+      logger.debug(`[${sessionName}] Atualizando status no banco de dados para 'initializing'`);
       await sessionRepository.updateOrCreate(sessionName, {
         name: sessionName,
         status: "initializing",
         lastActivity: new Date(),
       });
+      logger.debug(`[${sessionName}] Status atualizado no banco de dados com sucesso`);
 
+      logger.debug(`[${sessionName}] Adicionando sessão ao mapa de memória`);
       this.sessions.set(sessionName, {
         client: null,
         status: "initializing",
         qrCode: null,
       });
+      logger.debug(`[${sessionName}] Sessão adicionada ao mapa de memória`);
+
+      const tokensPath = path.join(process.cwd(), "tokens", sessionName);
+      logger.info(`[${sessionName}] 📁 Diretório de tokens: ${tokensPath}`);
+      logger.info(`[${sessionName}] 🔧 Configurações wppconnect:`);
+      logger.info(`[${sessionName}]    - autoClose: 60000ms`);
+      logger.info(`[${sessionName}]    - createPathFileToken: true`);
+      logger.info(`[${sessionName}]    - waitForLogin: true`);
+
+      logger.info(`[${sessionName}] ⏳ Iniciando create() do wppconnect...`);
+      const startTime = Date.now();
+
+      // Detectar sistema operacional
+      const isWindows = process.platform === 'win32';
+      const isLinux = process.platform === 'linux';
+      logger.info(`[${sessionName}] 💻 Sistema operacional: ${process.platform}`);
+
+      // Configurações específicas por plataforma
+      const browserArgsConfig = isWindows ? [
+        // Windows: configurações mais permissivas
+        '--disable-web-security',
+        '--no-sandbox',
+        '--disable-setuid-sandbox',
+        '--disable-dev-shm-usage',
+        '--disable-accelerated-2d-canvas',
+        '--no-first-run',
+        '--disable-gpu',
+        '--disable-software-rasterizer',
+        '--disable-extensions',
+        '--disable-background-networking',
+        '--disable-background-timer-throttling',
+        '--disable-backgrounding-occluded-windows',
+        '--disable-renderer-backgrounding',
+        '--disable-features=TranslateUI',
+        '--disable-ipc-flooding-protection',
+        '--disable-hang-monitor',
+        '--disable-popup-blocking',
+        '--disable-prompt-on-repost',
+        '--disable-sync',
+        '--force-color-profile=srgb',
+        '--metrics-recording-only',
+        '--no-default-browser-check',
+        '--disable-breakpad',
+        '--password-store=basic',
+        '--use-mock-keychain',
+        '--enable-features=NetworkService,NetworkServiceInProcess',
+        '--disable-features=site-per-process',
+        '--window-size=1920,1080'
+      ] : [
+        // Linux: configurações otimizadas para servidor
+        '--disable-web-security',
+        '--no-sandbox',
+        '--disable-setuid-sandbox',
+        '--disable-dev-shm-usage',
+        '--disable-accelerated-2d-canvas',
+        '--no-first-run',
+        '--no-zygote',
+        '--disable-gpu',
+        '--disable-software-rasterizer',
+        '--disable-extensions',
+        '--disable-background-networking',
+        '--single-process' // Importante para Amazon Linux
+      ];
+
+      logger.debug(`[${sessionName}] 🔧 Args do browser: ${browserArgsConfig.length} argumentos configurados`);
+
+      // Timeout mais longo - 180 segundos (3 minutos)
+      const timeoutMs = 180000;
+      logger.info(`[${sessionName}] ⏱️ Timeout configurado: ${timeoutMs / 1000}s`);
+
+      // Timeout de segurança para detectar travamentos
+      const timeoutId = setTimeout(() => {
+        logger.warn(`[${sessionName}] ⏰ AVISO: create() está demorando mais de ${timeoutMs / 1000} segundos!`);
+        logger.warn(`[${sessionName}] Possível travamento no processo de inicialização`);
+      }, timeoutMs);
 
       const client = await create({
-        session: sessionName, // ✅ Nome real
-        userDataDir: path.join(process.cwd(), "tokens", sessionName), // ✅ Nome real
+        session: sessionName,
+        userDataDir: tokensPath,
 
-        // ✅ ADICIONE ESTAS OPÇÕES CRÍTICAS
-        autoClose: 60000,
+        // Configurações de timeout e comportamento
+        autoClose: timeoutMs, // 3 minutos ao invés de 1 minuto
         createPathFileToken: true,
         waitForLogin: true,
+        logQR: false,
+
+        // Configurações de Puppeteer
+        puppeteerOptions: {
+          headless: true,
+          devtools: false,
+          args: browserArgsConfig,
+          executablePath: process.env.CHROME_PATH || undefined, // Permitir path customizado
+        },
+
+        // Callbacks de progresso
+        statusFind: (statusSession) => {
+          logger.debug(`[${sessionName}] 🔍 Status Find: ${statusSession}`);
+
+          // Emitir progresso via Socket.IO
+          if (statusSession === 'inChat' || statusSession === 'isLogged') {
+            logger.info(`[${sessionName}] ✅ Status positivo: ${statusSession}`);
+          }
+        },
 
         catchQR: (base64Qr, asciiQR, attempts, urlCode) => {
-          logger.info("QR Code recebido");
+          logger.info(`[${sessionName}] 📱 QR CODE RECEBIDO (tentativa ${attempts})`);
+          logger.debug(`[${sessionName}] QR Code URL: ${urlCode}`);
+          logger.debug(`[${sessionName}] QR Code ASCII length: ${asciiQR?.length || 0}`);
+          logger.debug(`[${sessionName}] QR Code base64 length: ${base64Qr?.length || 0}`);
+
           sessionRepository.updateOrCreate(sessionName, {
             qrCode: base64Qr,
             status: "awaiting_qr",
+          }).then(() => {
+            logger.debug(`[${sessionName}] QR Code salvo no banco de dados`);
+          }).catch((err) => {
+            logger.error(`[${sessionName}] Erro ao salvar QR Code no banco:`, err);
           });
+
           this.emitQRCode(sessionName, base64Qr);
+          logger.debug(`[${sessionName}] QR Code emitido via Socket.IO`);
         },
 
-        // ... resto do código
+        // Callback de progresso de carregamento
+        onLoadingScreen: (percent, message) => {
+          logger.info(`[${sessionName}] ⏳ Carregando: ${percent}% - ${message}`);
+          this.emitLoading(sessionName, percent, message);
+        },
+
+        // IMPORTANTE: Desabilitar autoClose se já tiver token (sessão existente)
+        ...(fs.existsSync(tokensPath) && fs.readdirSync(tokensPath).length > 0 ? {
+          autoClose: 0, // Desabilitar autoClose para sessões existentes
+        } : {}),
       });
 
+      clearTimeout(timeoutId); // Limpar timeout de segurança
+
+      const elapsedTime = Date.now() - startTime;
+      logger.info(`[${sessionName}] ✅ create() finalizado em ${elapsedTime}ms`);
+
       // ✅ ADICIONAR TRATAMENTO DE DESCONEXÃO
+      logger.info(`[${sessionName}] 🎯 Registrando listener de mudança de estado (onStateChange)`);
       client.onStateChange(async (state) => {
-        logger.info(`Estado da sessão ${sessionName}: ${state}`);
+        logger.info(`━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━`);
+        logger.info(`[${sessionName}] 🔄 MUDANÇA DE ESTADO: ${state}`);
+        logger.info(`━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━`);
 
         if (state === "CONFLICT" || state === "UNLAUNCHED") {
-          await client.useHere();
+          logger.warn(`[${sessionName}] ⚠️ Estado ${state} detectado - executando useHere()`);
+          try {
+            await client.useHere();
+            logger.info(`[${sessionName}] ✅ useHere() executado com sucesso`);
+          } catch (err) {
+            logger.error(`[${sessionName}] ❌ Erro ao executar useHere():`, err);
+          }
         }
 
         if (state === "CONNECTED") {
-          logger.info(`Sessão ${sessionName} conectada!`);
+          logger.info(`[${sessionName}] 🎉 SESSÃO CONECTADA COM SUCESSO!`);
+          logger.debug(`[${sessionName}] Adicionando cliente ao mapa de clients`);
           this.clients.set(sessionName, client);
+
+          logger.debug(`[${sessionName}] Atualizando status no banco para 'connected'`);
           await sessionRepository.updateOrCreate(sessionName, {
             status: "connected",
             lastActivity: new Date(),
             qrCode: null,
           });
+          logger.debug(`[${sessionName}] Status atualizado no banco de dados`);
+
           this.emitSuccess(sessionName, "Sessão conectada!");
+          logger.debug(`[${sessionName}] Evento de sucesso emitido via Socket.IO`);
+
+          // Buscar informações do dispositivo conectado
+          try {
+            const hostDevice = await client.getHostDevice();
+            logger.info(`[${sessionName}] 📱 Dispositivo conectado:`, {
+              phone: hostDevice?.phone,
+              platform: hostDevice?.platform,
+              manufacturer: hostDevice?.manufacturer
+            });
+          } catch (err) {
+            logger.debug(`[${sessionName}] Não foi possível obter informações do dispositivo:`, err.message);
+          }
         }
 
         // ✅ TRATAR DESCONEXÕES
         if (state === "DISCONNECTED" || state === "TIMEOUT") {
-          logger.warn(`Sessão ${sessionName} desconectada. Estado: ${state}`);
+          logger.warn(`[${sessionName}] ⚠️ SESSÃO DESCONECTADA - Estado: ${state}`);
+          logger.debug(`[${sessionName}] Atualizando status no banco para 'disconnected'`);
           await sessionRepository.updateStatus(sessionName, "disconnected");
+
+          logger.debug(`[${sessionName}] Removendo cliente do mapa de clients`);
           this.clients.delete(sessionName);
 
           // Tentar reconectar após 5 segundos
+          logger.info(`[${sessionName}] ⏰ Agendando reconexão em 5 segundos...`);
           setTimeout(() => {
+            logger.info(`[${sessionName}] 🔄 Iniciando tentativa de reconexão...`);
             this.reconnectSession(sessionName);
           }, 5000);
         }
       });
 
       // ✨ LISTENER DE MENSAGENS RECEBIDAS - Processa automaticamente por bot se vinculado
+      logger.info(`[${sessionName}] 📨 Registrando listener de mensagens (onMessage)`);
       client.onMessage(async (message) => {
+        logger.debug(`[${sessionName}] 📩 Nova mensagem recebida de: ${message.from}`);
         await this.handleIncomingMessage(sessionName, client, message);
       });
 
+      // Adicionar listener para erros do cliente
+      logger.info(`[${sessionName}] ⚠️ Registrando listener de erros`);
+      client.onIncomingCall(async (call) => {
+        logger.info(`[${sessionName}] 📞 Chamada recebida de: ${call.peerJid}`);
+      });
+
+      logger.info(`[${sessionName}] ✅ Todos os listeners registrados com sucesso`);
+      logger.info(`[${sessionName}] 🎯 Cliente criado e pronto para uso`);
+
       return client;
     } catch (error) {
-      logger.error("Erro ao criar sessão >>> " + sessionName, error);
+      logger.error(`━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━`);
+      logger.error(`[${sessionName}] ❌ ERRO CRÍTICO AO CRIAR SESSÃO`);
+      logger.error(`━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━`);
+      logger.error(`[${sessionName}] Tipo do erro: ${error.name}`);
+      logger.error(`[${sessionName}] Mensagem: ${error.message}`);
+      logger.error(`[${sessionName}] Stack trace:`, error.stack);
+
+      // Atualizar status para failed
+      try {
+        await sessionRepository.updateStatus(sessionName, "failed");
+        logger.debug(`[${sessionName}] Status atualizado para 'failed' no banco de dados`);
+      } catch (dbError) {
+        logger.error(`[${sessionName}] Erro ao atualizar status no banco:`, dbError);
+      }
+
+      // Emitir erro via Socket.IO
+      this.emitError(sessionName, error.message);
+
       throw error;
     }
   }
