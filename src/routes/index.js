@@ -8,6 +8,7 @@ import ticketRoutes from './ticket.routes.js'
 import homeRoutes from './home.routes.js'
 import profileRoutes from './profile.routes.js'
 import botConfig from './bot-config.routes.js'
+import appointmentRoutes from './appointment.routes.js'
 
 const router = express.Router();
 
@@ -19,5 +20,6 @@ router.use('/tickets', ticketRoutes);
 router.use('/home', homeRoutes);
 router.use('/profile', profileRoutes);
 router.use('/bot-config', botConfig);
+router.use('/appointments', appointmentRoutes);
 
 export default router

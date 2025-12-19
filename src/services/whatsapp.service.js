@@ -3,6 +3,8 @@ import logger from "../utils/logger.js";
 import sessionRepository from "../repositories/session.repository.js";
 import ticketRepository from "../repositories/ticket.repository.js";
 import syncService from "../services/sync.service.js";
+import botConfigRepository from "../repositories/bot-config.repository.js";
+import botAgendaService from "./bot-agenda.service.js";
 import fs from "fs";
 import path from "path";
 
@@ -174,12 +176,130 @@ class WhatsAppService {
         }
       });
 
+      // ✨ LISTENER DE MENSAGENS RECEBIDAS - Processa automaticamente por bot se vinculado
+      client.onMessage(async (message) => {
+        await this.handleIncomingMessage(sessionName, client, message);
+      });
+
       return client;
     } catch (error) {
       logger.error("Erro ao criar sessão >>> " + sessionName, error);
       throw error;
     }
   }
+
+  async handleIncomingMessage(sessionName, client, message) {
+    try {
+      // Ignora mensagens próprias, grupos, broadcasts, status
+      const shouldIgnore =
+        message.from.includes('status@broadcast') ||
+        message.from.includes('@g.us') ||
+        message.fromMe ||
+        message.broadcast ||
+        (message.from.includes('@broadcast') && !message.from.includes('@c.us'));
+
+      if (shouldIgnore) {
+        logger.info(`🚫 Ignorando mensagem de: ${message.from}`);
+        return;
+      }
+
+      const contactNumber = message.from.replace('@c.us', '');
+      const contactName = message.sender?.name || message.sender?.pushname || contactNumber;
+
+      // Busca a sessão no banco para pegar o ID
+      const session = await sessionRepository.findByName(sessionName);
+
+      if (!session) {
+        logger.warn(`Sessão ${sessionName} não encontrada no banco`);
+        return;
+      }
+
+      // CHAVE: Verifica se existe bot ativo vinculado a esta sessão
+      const botConfig = await botConfigRepository.findBySessionId(session._id);
+
+      if (botConfig) {
+        logger.info(`🤖 Bot "${botConfig.name}" vinculado à sessão ${sessionName} - processando automaticamente`);
+
+        // Busca ou cria ticket
+        let ticket = await ticketRepository.findByContact(sessionName, contactNumber);
+
+        if (!ticket) {
+          // Cria novo ticket com status in_progress (bot está atendendo)
+          ticket = await ticketRepository.create({
+            contactNumber,
+            contactName,
+            sessionName,
+            status: 'in_progress',
+            subject: `Atendimento via Bot - ${botConfig.name}`,
+            priority: 'medium',
+            botHandled: true
+          });
+          logger.info(`📋 Ticket criado: ${ticket._id} - Status: in_progress (bot atendendo)`);
+        } else if (ticket.status === 'opened') {
+          // Atualiza para in_progress se estava aberto
+          await ticketRepository.updateStatus(ticket._id, 'in_progress');
+          logger.info(`📋 Ticket ${ticket._id} atualizado para: in_progress (bot assumiu)`);
+        }
+
+        // Processa mensagem pelo bot
+        const botResponse = await botAgendaService.processMessage(
+          sessionName,
+          contactNumber,
+          message.body,
+          ticket.contactId || contactNumber
+        );
+
+        if (botResponse) {
+          // Envia resposta do bot
+          await this.sendMessage(sessionName, contactNumber, botResponse.message);
+
+          // Se usuário pediu para falar com atendente
+          if (botResponse.transferToHuman) {
+            await ticketRepository.updateStatus(ticket._id, 'opened', {
+              notes: 'Cliente solicitou atendimento humano durante bot'
+            });
+            logger.info(`📋 Ticket ${ticket._id} transferido para humano`);
+          }
+
+          // Se bot finalizou com sucesso, fecha o ticket
+          if (!botResponse.shouldContinue && botResponse.appointment && !botResponse.error) {
+            await ticketRepository.updateStatus(ticket._id, 'finished', {
+              resolvedAt: new Date(),
+              closedAt: new Date(),
+              closedBy: 'bot',
+              appointmentId: botResponse.appointment._id,
+              resolution: `Agendamento criado via bot para ${botResponse.appointment.scheduledDate?.toLocaleDateString('pt-BR')} às ${botResponse.appointment.scheduledTime}`
+            });
+            logger.info(`✅ Ticket ${ticket._id} finalizado com sucesso pelo bot`);
+          }
+
+          // Se houver próxima pergunta, envia
+          if (botResponse.nextStep) {
+            let questionMessage = botResponse.nextStep.question;
+
+            if (botResponse.nextStep.options?.length > 0) {
+              questionMessage += '\n\n';
+              botResponse.nextStep.options.forEach(opt => {
+                questionMessage += `${opt.value} - ${opt.text}\n`;
+              });
+            }
+
+            await this.sendMessage(sessionName, contactNumber, questionMessage);
+          }
+        }
+
+        return; // Bot processou, não precisa criar ticket novamente
+      }
+
+      // Não tem bot vinculado - comportamento padrão
+      logger.info(`📝 Sem bot vinculado - criando ticket padrão para ${sessionName}`);
+      await syncService.processMessage(sessionName, message);
+
+    } catch (error) {
+      logger.error('❌ Erro ao processar mensagem entrante:', error);
+    }
+  }
+
   async syncUnreadMessages(sessionName, client) {
     try {
       logger.info(
