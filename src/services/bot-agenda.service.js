@@ -32,15 +32,30 @@ class BotAgendaService {
     try {
       // Busca o bot de agenda
       const botConfig = await botConfigRepository.findByName('Bot Agenda');
-      
+
       if (!botConfig || !botConfig.enabled) {
         return null; // Bot desabilitado
+      }
+
+      // ✨ NOVO: Verifica comandos de saída
+      const lowerMessage = message.toLowerCase().trim();
+      const exitCommands = ['sair', 'cancelar', 'atendente', 'humano', 'falar com atendente', 'operador'];
+
+      if (exitCommands.some(cmd => lowerMessage.includes(cmd))) {
+        this.clearSession(phone);
+        logger.info(`👤 Cliente ${phone} solicitou atendimento humano`);
+
+        return {
+          message: '👤 Entendi! Vou transferir você para um atendente humano.\n\nPor favor, aguarde que alguém irá te atender em breve.',
+          shouldContinue: false,
+          transferToHuman: true // ⚠️ Flag importante para o whatsapp.service
+        };
       }
 
       // Verifica horário de funcionamento
       if (!this.isBusinessHours(botConfig.businessHours)) {
         return {
-          message: botConfig.businessHours.offHoursMessage || 
+          message: botConfig.businessHours.offHoursMessage ||
                    'Estamos fora do horário de atendimento. Nosso horário é das 9h às 18h.',
           shouldContinue: false
         };
@@ -346,18 +361,8 @@ class BotAgendaService {
       // Cria o agendamento
       const appointment = await appointmentRepository.create(appointmentData);
 
-      // Cria um ticket já fechado
-      const ticket = await ticketRepository.create({
-        contactId: session.contactId,
-        phone: session.phone,
-        sessionName: session.sessionName,
-        status: 'closed',
-        subject: 'Agendamento realizado via bot',
-        description: `Agendamento criado para ${appointment.scheduledDate.toLocaleDateString('pt-BR')} às ${appointment.scheduledTime} - ${appointment.description}`,
-        appointmentId: appointment._id,
-        closedAt: new Date(),
-        closedBy: 'bot'
-      });
+      // ✨ MODIFICADO: NÃO cria ticket aqui - apenas retorna dados
+      // O ticket já foi criado no handleIncomingMessage e será finalizado lá
 
       // Limpa a sessão
       this.clearSession(session.phone);
@@ -378,8 +383,7 @@ class BotAgendaService {
       return {
         message: confirmationMessage,
         shouldContinue: false,
-        appointment,
-        ticket
+        appointment // ⚠️ Retorna appointment para que whatsapp.service finalize o ticket
       };
 
     } catch (error) {

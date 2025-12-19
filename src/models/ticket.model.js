@@ -47,6 +47,24 @@ const TicketSchema = new mongoose.Schema({
   },
   closedAt: {
     type: Date
+  },
+  closedBy: {
+    type: String
+  },
+  botHandled: {
+    type: Boolean,
+    default: false,
+    index: true
+  },
+  resolution: {
+    type: String
+  },
+  appointmentId: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'Appointment'
+  },
+  notes: {
+    type: String
   }
 }, { 
   timestamps: true 

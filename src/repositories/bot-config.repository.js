@@ -32,6 +32,13 @@ class BotConfigRepository {
     return await BotConfig.find({ enabled: true }).populate('autoResponses');
   }
 
+  async findBySessionId(sessionId) {
+    return await BotConfig.findOne({
+      sessionId: sessionId,
+      enabled: true
+    }).populate('autoResponses');
+  }
+
   async create(data) {
     return await BotConfig.create(data);
   }

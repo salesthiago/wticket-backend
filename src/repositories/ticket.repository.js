@@ -26,8 +26,8 @@ class TicketRepository {
         return await Ticket.findOne({
         sessionName: sessionName,
         contactNumber: contactNumber,
-        status: { $ne: 'closed' }
-      });
+        status: { $in: ['opened', 'in_progress', 'paused'] }
+      }).sort({ createdAt: -1 });
     } catch (error) {
       throw new Error(error.message);
     }
