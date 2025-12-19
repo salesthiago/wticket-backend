@@ -4,21 +4,26 @@ import logger from "../utils/logger.js";
 export const createSession = async (req, res) => {
   try {
     const { name } = req.body;
+    logger.info(`🌐 [API] Requisição para criar sessão: ${name}`);
+
     if (!name) {
+      logger.warn(`🌐 [API] Tentativa de criar sessão sem nome`);
       return res.status(400).json({
         error: "Nome da sessão é obrigatório",
       });
     }
 
+    logger.debug(`🌐 [API] Chamando whatsappService.createSession(${name})`);
     const result = whatsappService.createSession(name);
 
+    logger.info(`🌐 [API] ✅ Sessão ${name} criada com sucesso`);
     return res.json({
       success: true,
       message: "Sessão criada com sucesso",
       session: result.session,
     });
   } catch (error) {
-    logger.error("Erro ao criar sessão:", error);
+    logger.error(`🌐 [API] ❌ Erro ao criar sessão:`, error);
     res.status(500).json({
       error: "Erro interno ao criar sessão",
       details: error.message,
