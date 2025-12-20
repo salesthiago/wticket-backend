@@ -3,7 +3,19 @@ import mongoose from 'mongoose';
 const optionSchema = new mongoose.Schema({
   value: String,
   text: String,
-  nextStep: { type: Number, default: null } // Permite fluxo condicional
+  nextStep: { type: Number, default: null }, // Permite fluxo condicional
+  // Ação ao selecionar esta opção
+  action: {
+    type: String,
+    enum: ['nextStep', 'callBot', 'finish'],
+    default: 'nextStep'
+  },
+  // ID do bot a ser chamado (quando action = callBot)
+  targetBotId: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'BotConfig',
+    default: null
+  }
 }, { _id: false });
 
 const validationSchema = new mongoose.Schema({

@@ -230,12 +230,36 @@ class WhatsAppService {
         logger.warn(`[${sessionName}] Possível travamento no processo de inicialização`);
       }, timeoutMs);
 
-      // Verificar se já existe token salvo
+      // Verificar se já existe token VÁLIDO salvo
+      // Para ser considerado válido, precisa ter:
+      // 1. Pasta tokens/sessionName existir
+      // 2. Pasta tokens/sessionName/Default existir
+      // 3. Arquivo tokens/sessionName/Default/IndexedDB existir (prova de login anterior)
       const hasExistingToken = fs.existsSync(tokensPath) &&
                                fs.existsSync(path.join(tokensPath, 'Default')) &&
-                               fs.readdirSync(tokensPath).length > 2; // Mais de 2 arquivos/pastas
+                               (fs.existsSync(path.join(tokensPath, 'Default', 'IndexedDB')) ||
+                                fs.existsSync(path.join(tokensPath, 'Default', 'Local Storage')));
 
-      logger.info(`[${sessionName}] 🔍 Sessão existente: ${hasExistingToken ? 'SIM' : 'NÃO'}`);
+      logger.info(`[${sessionName}] 🔍 Token válido encontrado: ${hasExistingToken ? 'SIM' : 'NÃO'}`);
+
+      if (!hasExistingToken && fs.existsSync(tokensPath)) {
+        logger.warn(`[${sessionName}] ⚠️ Pasta de tokens existe mas sem dados válidos - limpando...`);
+        try {
+          // Limpar pasta corrompida
+          const files = fs.readdirSync(tokensPath);
+          for (const file of files) {
+            const filePath = path.join(tokensPath, file);
+            if (fs.lstatSync(filePath).isDirectory()) {
+              fs.rmSync(filePath, { recursive: true, force: true });
+            } else {
+              fs.unlinkSync(filePath);
+            }
+          }
+          logger.info(`[${sessionName}] ✅ Pasta limpa - iniciando nova sessão`);
+        } catch (cleanError) {
+          logger.warn(`[${sessionName}] Erro ao limpar pasta:`, cleanError);
+        }
+      }
 
       const client = await create({
         session: sessionName,
@@ -428,8 +452,12 @@ class WhatsAppService {
         return;
       }
 
-      const contactNumber = message.from.replace('@c.us', '');
+      // Extrai número limpo (sem @c.us ou @lid)
+      const contactNumber = message.from.replace(/@c\.us|@lid/g, '');
       const contactName = message.sender?.name || message.sender?.pushname || contactNumber;
+
+      // Formato correto para enviar mensagem (precisa de @c.us ou @lid)
+      const fullContactId = message.from; // Mantém o formato original
 
       // Busca a sessão no banco para pegar o ID
       const session = await sessionRepository.findByName(sessionName);
@@ -439,11 +467,34 @@ class WhatsAppService {
         return;
       }
 
-      // CHAVE: Verifica se existe bot ativo vinculado a esta sessão
-      const botConfig = await botConfigRepository.findBySessionId(session._id);
+      logger.debug(`✅ Sessão encontrada: ${sessionName} (ID: ${session._id})`);
 
-      if (botConfig) {
-        logger.info(`🤖 Bot "${botConfig.name}" vinculado à sessão ${sessionName} - processando automaticamente`);
+      // CHAVE: Verifica se existe bot ativo vinculado a esta sessão
+      const hasActiveBots = await botConfigRepository.findAll({
+        query: {
+          sessionId: session._id,
+          enabled: true,
+          isActive: true
+        },
+        page: 0,
+        rowsPerPage: 1
+      });
+
+      logger.debug(`🔍 Query bots: sessionId=${session._id}, enabled=true, isActive=true`);
+      logger.debug(`📊 Resultado da busca: ${hasActiveBots?.items?.length || 0} bot(s) encontrado(s)`);
+
+      if (hasActiveBots?.items?.length > 0) {
+        logger.info(`📋 Bots encontrados:`, hasActiveBots.items.map(b => ({
+          id: b._id,
+          name: b.name,
+          sessionId: b.sessionId,
+          enabled: b.enabled,
+          isActive: b.isActive
+        })));
+      }
+
+      if (hasActiveBots && hasActiveBots.items && hasActiveBots.items.length > 0) {
+        logger.info(`🤖 Sessão ${sessionName} possui bots ativos - processando com bot-agenda`);
 
         // Busca ou cria ticket
         let ticket = await ticketRepository.findByContact(sessionName, contactNumber);
@@ -455,18 +506,18 @@ class WhatsAppService {
             contactName,
             sessionName,
             status: 'in_progress',
-            subject: `Atendimento via Bot - ${botConfig.name}`,
+            subject: `Atendimento Automatizado`,
             priority: 'medium',
             botHandled: true
           });
           logger.info(`📋 Ticket criado: ${ticket._id} - Status: in_progress (bot atendendo)`);
-        } else if (ticket.status === 'opened') {
-          // Atualiza para in_progress se estava aberto
+        } else if (ticket.status === 'opened' || ticket.status === 'finished') {
+          // Reabre ticket se necessário
           await ticketRepository.updateStatus(ticket._id, 'in_progress');
           logger.info(`📋 Ticket ${ticket._id} atualizado para: in_progress (bot assumiu)`);
         }
 
-        // Processa mensagem pelo bot
+        // Processa mensagem pelo bot (novo fluxo: iniciação → nome → menu → bot)
         const botResponse = await botAgendaService.processMessage(
           sessionName,
           contactNumber,
@@ -475,8 +526,8 @@ class WhatsAppService {
         );
 
         if (botResponse) {
-          // Envia resposta do bot
-          await this.sendMessage(sessionName, contactNumber, botResponse.message);
+          // Envia resposta do bot (usa fullContactId com @c.us ou @lid)
+          await this.sendMessage(sessionName, fullContactId, botResponse.message);
 
           // Se usuário pediu para falar com atendente
           if (botResponse.transferToHuman) {
@@ -486,8 +537,24 @@ class WhatsAppService {
             logger.info(`📋 Ticket ${ticket._id} transferido para humano`);
           }
 
-          // Se bot finalizou com sucesso, fecha o ticket
-          if (!botResponse.shouldContinue && botResponse.appointment && !botResponse.error) {
+          // Se usuário finalizou manualmente (antes do fim)
+          if (botResponse.finishedByUser) {
+            await ticketRepository.updateStatus(ticket._id, 'finished', {
+              resolvedAt: new Date(),
+              closedAt: new Date(),
+              closedBy: 'user',
+              resolution: 'Atendimento finalizado pelo usuário'
+            });
+            logger.info(`✅ Ticket ${ticket._id} finalizado pelo usuário`);
+
+            // Enviar mensagem de finalização da sessão
+            const finalizationMsg = session.finalizationMessage ||
+              '✅ Atendimento finalizado.\n\nObrigado pelo contato! Para iniciar um novo atendimento, envie outra mensagem.';
+            await this.sendMessage(sessionName, fullContactId, finalizationMsg);
+          }
+
+          // Se bot completou com sucesso (agendamento criado)
+          if (botResponse.completed && botResponse.appointment && !botResponse.error) {
             await ticketRepository.updateStatus(ticket._id, 'finished', {
               resolvedAt: new Date(),
               closedAt: new Date(),
@@ -496,20 +563,22 @@ class WhatsAppService {
               resolution: `Agendamento criado via bot para ${botResponse.appointment.scheduledDate?.toLocaleDateString('pt-BR')} às ${botResponse.appointment.scheduledTime}`
             });
             logger.info(`✅ Ticket ${ticket._id} finalizado com sucesso pelo bot`);
+
+            // Enviar mensagem de finalização da sessão
+            const finalizationMsg = session.finalizationMessage ||
+              '✅ Atendimento finalizado.\n\nObrigado pelo contato! Para iniciar um novo atendimento, envie outra mensagem.';
+            await this.sendMessage(sessionName, fullContactId, finalizationMsg);
           }
 
-          // Se houver próxima pergunta, envia
-          if (botResponse.nextStep) {
-            let questionMessage = botResponse.nextStep.question;
-
-            if (botResponse.nextStep.options?.length > 0) {
-              questionMessage += '\n\n';
-              botResponse.nextStep.options.forEach(opt => {
-                questionMessage += `${opt.value} - ${opt.text}\n`;
-              });
-            }
-
-            await this.sendMessage(sessionName, contactNumber, questionMessage);
+          // Se teve erro e precisa encerrar
+          if (botResponse.error && !botResponse.shouldContinue) {
+            await ticketRepository.updateStatus(ticket._id, 'finished', {
+              resolvedAt: new Date(),
+              closedAt: new Date(),
+              closedBy: 'bot',
+              resolution: 'Atendimento encerrado devido a erro'
+            });
+            logger.error(`❌ Ticket ${ticket._id} finalizado com erro`);
           }
         }
 
@@ -778,12 +847,15 @@ class WhatsAppService {
     try {
       const client = this.clients.get(sessionName);
       if (!client) {
-        throw new Error("Sessão não encontrada ou não conectada");
+        throw new Error("Sessão não encontrada ou não conectrada");
       }
 
-      const formattedNumber = number.includes("@c.us")
+      // Suporta tanto @c.us quanto @lid (Local ID)
+      const formattedNumber = number.includes("@c.us") || number.includes("@lid")
         ? number
         : `${number}@c.us`;
+
+      logger.debug(`🔧 sendMessage - Número original: ${number}, Formatado: ${formattedNumber}`);
 
       const result = await client.sendText(formattedNumber, message);
 
@@ -823,6 +895,7 @@ class WhatsAppService {
         const isReallyConnected = client && client.isConnected();
 
         sessions.push({
+          id: dbSession._id,
           name: dbSession.name,
           status: isReallyConnected ? "connected" : dbSession.status,
           number: dbSession.number,

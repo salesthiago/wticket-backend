@@ -35,9 +35,24 @@ const SessionSchema = new mongoose.Schema({
   },
   client: {
     type: Object
+  },
+  // Mensagem de iniciação (obrigatória)
+  initiationMessage: {
+    type: String,
+    default: '👋 Olá! Bem-vindo(a) ao nosso atendimento automático.\n\nPara continuar, por favor digite: PROSSEGUIR'
+  },
+  // Palavra-chave para iniciar (case-sensitive)
+  initiationKeyword: {
+    type: String,
+    default: 'PROSSEGUIR'
+  },
+  // Mensagem de finalização
+  finalizationMessage: {
+    type: String,
+    default: '✅ Atendimento finalizado.\n\nObrigado pelo contato! Para iniciar um novo atendimento, envie outra mensagem.'
   }
-}, { 
-  timestamps: true 
+}, {
+  timestamps: true
 });
 
 // Índice para buscas por nome e status
