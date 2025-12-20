@@ -19,6 +19,18 @@ const botConfigSchema = new mongoose.Schema({
     type: String,
     required: false
   },
+  // Palavra-chave para ativar este bot no menu (ex: ORACAO, VOLUNTARIOS)
+  triggerKeyword: {
+    type: String,
+    required: false,
+    uppercase: true,
+    trim: true
+  },
+  // Se este bot está ativo para aparecer no menu
+  isActive: {
+    type: Boolean,
+    default: true
+  },
   // Tipo do bot
   type: {
     type: String,
@@ -90,5 +102,7 @@ botConfigSchema.virtual('autoResponses', {
 
 botConfigSchema.index({ name: 1 }, { unique: true });
 botConfigSchema.index({ enabled: 1 });
+botConfigSchema.index({ sessionId: 1, isActive: 1 });
+botConfigSchema.index({ triggerKeyword: 1 });
 
 export default mongoose.model('BotConfig', botConfigSchema);

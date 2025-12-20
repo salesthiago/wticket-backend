@@ -4,11 +4,12 @@ import logger from '../utils/logger.js';
 import { diacriticSensitiveRegex, onlyNumbers } from '../utils/formatter.js';
 import botConfigRepository from '../repositories/bot-config.repository.js';
 import autoResponseRepository from '../repositories/auto-response.repository.js';
+import Session from '../models/session.model.js';
 
 export const findAll = async (req, res) => {
   try {
     
-    const { search } = req.query;
+    const { search, isActive, enabled } = req.query;
     const page = (req?.page - 1) || 0;
     const rowsPerPage = req?.perPage || 10;
     
@@ -19,6 +20,14 @@ export const findAll = async (req, res) => {
             $options: "i",
         }
     }
+    if (isActive) {
+      query.isActive = isActive
+    }
+
+    if (enabled) {
+      query.enabled = enabled
+    }
+    
     const items = await botConfigRepository.findAll({ query, page, rowsPerPage })
 
     return res.status(200).json(items);
@@ -30,11 +39,32 @@ export const findAll = async (req, res) => {
 
 export const create = async (req, res) => {
   try {
-    const { name, enabled } = req.body;
+    const { name, enabled, sessionId } = req.body;
     if (!name) return res.status(400).json({ message: 'name is required' });
 
-    const bot = await botConfigRepository.create(req.body);
-    
+    // Se sessionId foi fornecido e não é um ObjectId válido, buscar pela sessão
+    let finalData = { ...req.body };
+    if (sessionId) {
+      // Verificar se é um ObjectId válido ou um nome de sessão
+      const isObjectId = /^[0-9a-fA-F]{24}$/.test(sessionId);
+
+      if (!isObjectId) {
+        // É um nome de sessão, buscar o ObjectId
+        logger.debug(`[bot-config] sessionId "${sessionId}" não é ObjectId, buscando sessão por nome...`);
+        const session = await Session.findOne({ name: sessionId });
+
+        if (!session) {
+          logger.warn(`[bot-config] Sessão "${sessionId}" não encontrada`);
+          return res.status(404).json({ message: `Sessão "${sessionId}" não encontrada` });
+        }
+
+        logger.debug(`[bot-config] Sessão encontrada: ${session._id}`);
+        finalData.sessionId = session._id;
+      }
+    }
+
+    const bot = await botConfigRepository.create(finalData);
+
     return res.status(200).json(bot);
   } catch (err) {
     logger.error('Error to botConfigController Contact >>> ', err);
@@ -46,14 +76,36 @@ export const update = async (req, res) => {
   try {
     const { id } = req.params
     if (!id) {
-      return res.status(422).json({ message: 'ID not founded' }, req);  
+      return res.status(422).json({ message: 'ID not founded' }, req);
     }
-    const { name, enabled } = req.body;
+    const { name, enabled, sessionId } = req.body;
     if (!enabled || !name) return res.status(400).json({ message: 'Status and name is required' });
 
     const bot = await botConfigRepository.findById(id);
     if (!bot) return res.status(404).json({ message: 'the BOT not be founded!' });
-    const updated = await botConfigRepository.update(id, req.body)
+
+    // Se sessionId foi fornecido e não é um ObjectId válido, buscar pela sessão
+    let finalData = { ...req.body };
+    if (sessionId) {
+      // Verificar se é um ObjectId válido ou um nome de sessão
+      const isObjectId = /^[0-9a-fA-F]{24}$/.test(sessionId);
+
+      if (!isObjectId) {
+        // É um nome de sessão, buscar o ObjectId
+        logger.debug(`[bot-config] sessionId "${sessionId}" não é ObjectId, buscando sessão por nome...`);
+        const session = await Session.findOne({ name: sessionId });
+
+        if (!session) {
+          logger.warn(`[bot-config] Sessão "${sessionId}" não encontrada`);
+          return res.status(404).json({ message: `Sessão "${sessionId}" não encontrada` });
+        }
+
+        logger.debug(`[bot-config] Sessão encontrada: ${session._id}`);
+        finalData.sessionId = session._id;
+      }
+    }
+
+    const updated = await botConfigRepository.update(id, finalData)
     return res.status(200).json(updated);
   } catch (err) {
     logger.error('botConfigController error ', err);
