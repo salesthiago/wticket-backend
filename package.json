@@ -19,6 +19,7 @@
   "license": "ISC",
   "description": "",
   "dependencies": {
+    "@google/generative-ai": "^0.24.1",
     "@wppconnect-team/wppconnect": "^1.37.5",
     "bcrypt": "^6.0.0",
     "botbuilder": "^4.23.3",
