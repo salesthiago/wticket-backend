@@ -569,3 +569,8 @@ Use palavras simples, sem acentos:
 **Data de implementação:** 2025-12-19
 **Versão:** 2.0
 **Desenvolvido por:** Claude Code
+
+
+# Google 
+## chave - GEMINI
+``` AIzaSyAbEB2qXDXAbREJLc0eRqJTYbQvXeysRXM ```
