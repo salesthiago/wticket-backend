@@ -5,6 +5,7 @@ import ticketRepository from '../repositories/ticket.repository.js';
 import contactRepository from '../repositories/contact.repository.js';
 import sessionRepository from '../repositories/session.repository.js';
 import logger from '../utils/logger.js';
+import { normalizeText } from '../utils/formatter.js';
 
 class BotAgendaService {
   constructor() {
@@ -90,8 +91,8 @@ class BotAgendaService {
   async handleInitiation(whatsappSession, userSession, message, phone, sessionName, contactId) {
     const keyword = whatsappSession.initiationKeyword || 'PROSSEGUIR';
 
-    // Comparação case-insensitive
-    if (message.toUpperCase() === keyword.toUpperCase()) {
+    // Comparação case-insensitive e sem acentos
+    if (normalizeText(message) === normalizeText(keyword)) {
       // Palavra-chave correta, verifica se contato existe
       const contact = await contactRepository.findByNumber(phone.replace(/\D/g, ''));
 
@@ -206,16 +207,16 @@ class BotAgendaService {
 
   // ETAPA 4: BOT SELECTION - Processa seleção de bot
   async handleBotSelection(whatsappSession, userSession, message, phone, sessionName) {
-    const selectedKeyword = message.toUpperCase().trim();
+    const normalizedMessage = normalizeText(message);
 
-    // Procura bot pela palavra-chave
+    // Procura bot pela palavra-chave (comparação sem acentos e case-insensitive)
     const selectedBot = userSession.availableBots?.find(
-      bot => bot.triggerKeyword?.toUpperCase() === selectedKeyword
+      bot => normalizeText(bot.triggerKeyword || '') === normalizedMessage
     );
 
     if (!selectedBot) {
       // Palavra-chave não reconhecida, reexibir menu
-      logger.warn(`[${phone}] Palavra-chave "${selectedKeyword}" não reconhecida`);
+      logger.warn(`[${phone}] Palavra-chave "${normalizedMessage}" não reconhecida`);
       return await this.showBotMenu(whatsappSession, userSession, sessionName);
     }
 
@@ -562,8 +563,9 @@ class BotAgendaService {
         break;
 
       case 'option':
+        const normalizedMsg = normalizeText(message);
         const option = autoResponse.options.find(
-          opt => opt.value === message || opt.text.toLowerCase() === message.toLowerCase()
+          opt => normalizeText(opt.value) === normalizedMsg || normalizeText(opt.text) === normalizedMsg
         );
 
         if (!option) {
