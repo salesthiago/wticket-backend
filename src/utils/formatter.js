@@ -7,6 +7,15 @@ export const diacriticSensitiveRegex = (string = "") => {
     .replace(/u/g, "[u,ü,ú,ù]");
 };
 
+// Normaliza texto removendo acentos e convertendo para minúsculo
+export const normalizeText = (string = "") => {
+  return string
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .trim();
+};
+
 export const onlyNumbers = (string = "") => {
   return string.replace(/[^\d]+/g, "");
 };
