@@ -63,21 +63,34 @@ export const initSocket = (io) => {
     socket.on("rescueMessages", async (data) => {
       try {
         const { sessionName, contactNumber } = data;
-        logger.info(
-          `Socket ${socket.id} solicitando reconexão: ${sessionName}`
-        );
+
+        if (!contactNumber || !sessionName) {
+          logger.warn(`rescueMessages: dados incompletos - session: ${sessionName}, contact: ${contactNumber}`);
+          socket.emit("recoveryMessages", { success: false, messages: [], error: 'Dados incompletos' });
+          return;
+        }
+
+        logger.info(`Socket ${socket.id} solicitando mensagens: ${sessionName} - ${contactNumber}`);
 
         const result = await whatsappService.syncMessages(sessionName, contactNumber);
+
+        // Verifica se o resultado indica erro
+        if (result && result.success === false) {
+          logger.warn(`Falha ao recuperar mensagens: ${result.error}`);
+          socket.emit("recoveryMessages", result);
+          return;
+        }
+
         socket.emit("recoveryMessages", {
           ...result,
         });
 
-
       } catch (error) {
-        logger.error(`Erro na reconexão via socket:`, error);
-        socket.emit("sessionReconnectError", {
+        logger.error(`Erro ao recuperar mensagens via socket:`, error);
+        socket.emit("recoveryMessages", {
+          success: false,
           error: error.message,
-          session: data.sessionName,
+          messages: []
         });
       }
     });

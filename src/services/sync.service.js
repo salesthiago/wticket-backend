@@ -166,9 +166,26 @@ class SyncService {
   async syncMessages(sessionName, client, contactNumber = null) {
     try {
       if (contactNumber) {
-        const chatId = contactNumber.includes("@c.us")
-          ? contactNumber
-          : `${contactNumber}@c.us`;
+        // Limpa o número removendo caracteres não numéricos (exceto @c.us se já existir)
+        let cleanNumber = contactNumber;
+        if (!contactNumber.includes("@c.us")) {
+          cleanNumber = contactNumber.replace(/\D/g, '');
+        }
+
+        // Validação básica: número brasileiro deve ter entre 12 e 13 dígitos (55 + DDD + número)
+        const numericOnly = cleanNumber.replace('@c.us', '');
+        if (numericOnly.length < 10 || numericOnly.length > 15) {
+          logger.warn(`Número inválido para sincronização: ${contactNumber} (limpo: ${cleanNumber})`);
+          return {
+            success: false,
+            error: 'Número de contato inválido',
+            messages: []
+          };
+        }
+
+        const chatId = cleanNumber.includes("@c.us")
+          ? cleanNumber
+          : `${cleanNumber}@c.us`;
 
         let messages = [];
 

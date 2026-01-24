@@ -1,4 +1,5 @@
 import whatsappService from "../services/whatsapp.service.js";
+import sessionRepository from "../repositories/session.repository.js";
 import logger from "../utils/logger.js";
 
 export const createSession = async (req, res) => {
@@ -194,6 +195,90 @@ export const syncStatus = async (req, res) => {
     logger.error("Erro ao listar sessões:", error);
     res.status(500).json({
       error: "Erro interno ao listar sessões",
+    });
+  }
+};
+
+export const updateSession = async (req, res) => {
+  try {
+    const { sessionName } = req.params;
+    const updateData = req.body;
+
+    if (!sessionName) {
+      return res.status(400).json({
+        error: "sessionName é obrigatório",
+      });
+    }
+
+    // Campos permitidos para atualização
+    const allowedFields = [
+      'initiationMessage',
+      'initiationKeyword',
+      'finalizationMessage',
+      'number'
+    ];
+
+    // Filtra apenas os campos permitidos
+    const filteredData = {};
+    for (const field of allowedFields) {
+      if (updateData[field] !== undefined) {
+        filteredData[field] = updateData[field];
+      }
+    }
+
+    if (Object.keys(filteredData).length === 0) {
+      return res.status(400).json({
+        error: "Nenhum campo válido para atualização",
+        allowedFields
+      });
+    }
+
+    const updatedSession = await sessionRepository.updateByName(sessionName, filteredData);
+
+    if (!updatedSession) {
+      return res.status(404).json({
+        error: "Sessão não encontrada",
+      });
+    }
+
+    logger.info(`Sessão ${sessionName} atualizada com sucesso`);
+    return res.json({
+      success: true,
+      message: "Sessão atualizada com sucesso",
+      session: updatedSession
+    });
+  } catch (error) {
+    logger.error("Erro ao atualizar sessão:", error);
+    res.status(500).json({
+      error: "Erro interno ao atualizar sessão",
+      details: error.message
+    });
+  }
+};
+
+export const getSession = async (req, res) => {
+  try {
+    const { sessionName } = req.params;
+
+    if (!sessionName) {
+      return res.status(400).json({
+        error: "sessionName é obrigatório",
+      });
+    }
+
+    const session = await sessionRepository.findByName(sessionName);
+
+    if (!session) {
+      return res.status(404).json({
+        error: "Sessão não encontrada",
+      });
+    }
+
+    return res.json(session);
+  } catch (error) {
+    logger.error("Erro ao buscar sessão:", error);
+    res.status(500).json({
+      error: "Erro interno ao buscar sessão",
     });
   }
 };
