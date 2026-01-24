@@ -166,26 +166,33 @@ class SyncService {
   async syncMessages(sessionName, client, contactNumber = null) {
     try {
       if (contactNumber) {
-        // Limpa o número removendo caracteres não numéricos (exceto @c.us se já existir)
-        let cleanNumber = contactNumber;
-        if (!contactNumber.includes("@c.us")) {
-          cleanNumber = contactNumber.replace(/\D/g, '');
-        }
+        let chatId;
 
-        // Validação básica: número brasileiro deve ter entre 12 e 13 dígitos (55 + DDD + número)
-        const numericOnly = cleanNumber.replace('@c.us', '');
-        if (numericOnly.length < 10 || numericOnly.length > 15) {
-          logger.warn(`Número inválido para sincronização: ${contactNumber} (limpo: ${cleanNumber})`);
-          return {
-            success: false,
-            error: 'Número de contato inválido',
-            messages: []
-          };
+        // Verifica se já contém @lid (Local ID) - usa diretamente
+        if (contactNumber.includes("@lid")) {
+          chatId = contactNumber;
+          logger.info(`Usando LID para sincronização: ${chatId}`);
         }
+        // Verifica se já contém @c.us - usa diretamente
+        else if (contactNumber.includes("@c.us")) {
+          chatId = contactNumber;
+        }
+        // Número sem sufixo - limpa e adiciona @c.us
+        else {
+          const cleanNumber = contactNumber.replace(/\D/g, '');
 
-        const chatId = cleanNumber.includes("@c.us")
-          ? cleanNumber
-          : `${cleanNumber}@c.us`;
+          // Validação básica: número deve ter entre 10 e 15 dígitos
+          if (cleanNumber.length < 10 || cleanNumber.length > 15) {
+            logger.warn(`Número inválido para sincronização: ${contactNumber} (limpo: ${cleanNumber})`);
+            return {
+              success: false,
+              error: 'Número de contato inválido',
+              messages: []
+            };
+          }
+
+          chatId = `${cleanNumber}@c.us`;
+        }
 
         let messages = [];
 
