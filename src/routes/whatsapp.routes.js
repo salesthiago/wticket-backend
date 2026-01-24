@@ -7,6 +7,8 @@ const router = Router();
 router.post('/sessions', authenticate, whatsappController.createSession);
 router.get('/sessions/:sessionName/qrcode', authenticate, whatsappController.getQRCode);
 router.get('/sessions/:sessionName/status', authenticate, whatsappController.getStatus);
+router.get('/sessions/:sessionName', authenticate, whatsappController.getSession);
+router.put('/sessions/:sessionName', authenticate, whatsappController.updateSession);
 router.post('/sessions/close', authenticate, whatsappController.closeSession);
 router.get('/sessions', authenticate, whatsappController.listSessions);
 router.delete('/sessions/:sessionName', authenticate, whatsappController.destroySession);

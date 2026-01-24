@@ -1,4 +1,7 @@
 import User from "../models/user.model.js";
+import bcrypt from 'bcrypt';
+
+const SALT_ROUNDS = 10;
 
 class UserRepository {
   async create({ name, email, role, password, status }) {
@@ -36,6 +39,12 @@ class UserRepository {
 
   async update(id, data) {
     try {
+      // Se a senha foi fornecida, faz o hash antes de atualizar
+      if (data.password) {
+        const salt = await bcrypt.genSalt(SALT_ROUNDS);
+        data.password = await bcrypt.hash(data.password, salt);
+      }
+
       return await User.findOneAndUpdate(
         { _id: id },
         { $set: { ...data } },
