@@ -613,6 +613,40 @@ class BotAgendaService {
         result.value = num;
         break;
 
+      case 'regex':
+        // Validação baseada no action para tipos conhecidos
+        if (autoResponse.action === 'scheduledDate' || autoResponse.action === 'date') {
+          const regexDateMatch = message.match(/(\d{2})\/(\d{2})\/(\d{4})/);
+          if (!regexDateMatch) {
+            return {
+              valid: false,
+              error: autoResponse.helpMessage || '📅 Por favor, informe uma data válida no formato DD/MM/AAAA\n\n_Exemplo: 25/01/2026_'
+            };
+          }
+          const [, rDay, rMonth, rYear] = regexDateMatch;
+          const regexDate = new Date(rYear, rMonth - 1, rDay);
+          if (isNaN(regexDate.getTime())) {
+            return {
+              valid: false,
+              error: '⚠️ Data inválida. Por favor, verifique os valores informados.'
+            };
+          }
+          result.value = regexDate;
+        } else if (autoResponse.action === 'scheduledTime' || autoResponse.action === 'time') {
+          const regexTimeMatch = message.match(/^([01]?\d|2[0-3]):([0-5]\d)$/);
+          if (!regexTimeMatch) {
+            return {
+              valid: false,
+              error: autoResponse.helpMessage || '🕐 Por favor, informe um horário válido no formato HH:mm\n\n_Exemplo: 14:30_'
+            };
+          }
+          result.value = message;
+        } else {
+          // Para outros tipos, apenas aceita o valor
+          result.value = message.trim();
+        }
+        break;
+
       default:
         result.value = message;
     }
@@ -672,6 +706,23 @@ class BotAgendaService {
               valid: false,
               error: validation.errorMessage || 'Por favor, escolha um dia útil (segunda a sexta)'
             };
+          }
+        }
+        break;
+
+      case 'regex':
+        // Validação com regex customizado
+        if (typeof value === 'string' && validation.value) {
+          try {
+            const regex = new RegExp(validation.value);
+            if (!regex.test(value)) {
+              return {
+                valid: false,
+                error: validation.errorMessage || 'Formato inválido. Por favor, verifique o valor informado.'
+              };
+            }
+          } catch (e) {
+            logger.warn(`Regex inválido na validação: ${validation.value}`);
           }
         }
         break;
