@@ -707,9 +707,33 @@ class WhatsAppService {
 
       if (contactNumber) {
         // Sincronizar mensagens de um contato específico
-        const chatId = contactNumber.includes("@c.us")
-          ? contactNumber
-          : `${contactNumber}@c.us`;
+        let chatId;
+
+        // Verifica se já contém @lid (Local ID) - usa diretamente
+        if (contactNumber.includes("@lid")) {
+          chatId = contactNumber;
+          logger.info(`Usando LID para sincronização alternativa: ${chatId}`);
+        }
+        // Verifica se já contém @c.us - usa diretamente
+        else if (contactNumber.includes("@c.us")) {
+          chatId = contactNumber;
+        }
+        // Número sem sufixo - limpa e adiciona @c.us
+        else {
+          const cleanNumber = contactNumber.replace(/\D/g, '');
+
+          // Validação básica: número deve ter entre 10 e 15 dígitos
+          if (cleanNumber.length < 10 || cleanNumber.length > 15) {
+            logger.warn(`Número inválido para sincronização alternativa: ${contactNumber} (limpo: ${cleanNumber})`);
+            return {
+              success: false,
+              error: 'Número de contato inválido',
+              messages: []
+            };
+          }
+
+          chatId = `${cleanNumber}@c.us`;
+        }
 
         // Tentar diferentes métodos disponíveis
         let messages = [];
