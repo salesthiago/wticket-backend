@@ -49,10 +49,13 @@ class TicketRepository {
     }
   }
 
-  async findAll(sessionName = null) {
+  async findAll(sessionName = null, category = null) {
     try {
-      const query = sessionName ? { sessionName } : {};
+      const query = {};
+      if (sessionName) query.sessionName = sessionName;
+      if (category) query.category = category;
       return await Ticket.find(query)
+        .populate('saleItems.product', 'name price sku')
         .sort({ lastMessage: -1 })
         .exec();
     } catch (error) {

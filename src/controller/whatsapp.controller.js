@@ -256,6 +256,41 @@ export const updateSession = async (req, res) => {
   }
 };
 
+export const getSessionProducts = async (req, res) => {
+  try {
+    const { sessionName } = req.params;
+    const products = await sessionRepository.getProducts(sessionName);
+    return res.json(products);
+  } catch (error) {
+    logger.error('Erro ao buscar produtos da sessão:', error);
+    res.status(500).json({ error: 'Erro interno' });
+  }
+};
+
+export const addSessionProduct = async (req, res) => {
+  try {
+    const { sessionName } = req.params;
+    const { productId } = req.body;
+    if (!productId) return res.status(422).json({ error: 'productId é obrigatório' });
+    const session = await sessionRepository.addProduct(sessionName, productId);
+    return res.json(session?.products || []);
+  } catch (error) {
+    logger.error('Erro ao adicionar produto à sessão:', error);
+    res.status(500).json({ error: 'Erro interno' });
+  }
+};
+
+export const removeSessionProduct = async (req, res) => {
+  try {
+    const { sessionName, productId } = req.params;
+    const session = await sessionRepository.removeProduct(sessionName, productId);
+    return res.json(session?.products || []);
+  } catch (error) {
+    logger.error('Erro ao remover produto da sessão:', error);
+    res.status(500).json({ error: 'Erro interno' });
+  }
+};
+
 export const getSession = async (req, res) => {
   try {
     const { sessionName } = req.params;

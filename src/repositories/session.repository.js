@@ -58,6 +58,39 @@ class SessionRepository {
     }
   }
 
+  async getProducts(name) {
+    try {
+      const session = await Session.findOne({ name }).populate('products');
+      return session?.products || [];
+    } catch (error) {
+      throw new Error(`Erro ao buscar produtos da sessão: ${error.message}`);
+    }
+  }
+
+  async addProduct(name, productId) {
+    try {
+      return await Session.findOneAndUpdate(
+        { name },
+        { $addToSet: { products: productId } },
+        { new: true }
+      ).populate('products');
+    } catch (error) {
+      throw new Error(`Erro ao adicionar produto: ${error.message}`);
+    }
+  }
+
+  async removeProduct(name, productId) {
+    try {
+      return await Session.findOneAndUpdate(
+        { name },
+        { $pull: { products: productId } },
+        { new: true }
+      ).populate('products');
+    } catch (error) {
+      throw new Error(`Erro ao remover produto: ${error.message}`);
+    }
+  }
+
   async updateStatus(name, status) {
     try {
       return await Session.findOneAndUpdate(

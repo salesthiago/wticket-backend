@@ -10,6 +10,9 @@ import profileRoutes from './profile.routes.js'
 import botConfig from './bot-config.routes.js'
 import appointmentRoutes from './appointment.routes.js'
 import geminiRoutes from './gemini.routes.js'
+import productRoutes from './product.routes.js'
+import customerRoutes from './customer.routes.js'
+import leadRoutes from './lead.routes.js'
 
 const router = express.Router();
 
@@ -23,5 +26,8 @@ router.use('/profile', profileRoutes);
 router.use('/bot-config', botConfig);
 router.use('/appointments', appointmentRoutes);
 router.use('/gemini', geminiRoutes);
+router.use('/products', productRoutes);
+router.use('/customers', customerRoutes);
+router.use('/leads', leadRoutes);
 
 export default router
