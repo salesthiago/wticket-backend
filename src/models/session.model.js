@@ -50,7 +50,11 @@ const SessionSchema = new mongoose.Schema({
   finalizationMessage: {
     type: String,
     default: '✅ Atendimento finalizado.\n\nObrigado pelo contato! Para iniciar um novo atendimento, envie outra mensagem.'
-  }
+  },
+  products: [{
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'Product'
+  }]
 }, {
   timestamps: true
 });

@@ -65,9 +65,23 @@ const TicketSchema = new mongoose.Schema({
   },
   notes: {
     type: String
-  }
-}, { 
-  timestamps: true 
+  },
+  category: {
+    type: String,
+    enum: ['support', 'sale'],
+    default: 'support',
+    index: true
+  },
+  saleItems: [{
+    product: { type: mongoose.Schema.Types.ObjectId, ref: 'Product' },
+    productName: { type: String },
+    quantity: { type: Number, default: 1, min: 1 },
+    unitPrice: { type: Number, default: 0, min: 0 },
+    sold: { type: Boolean, default: false },
+    notes: { type: String }
+  }]
+}, {
+  timestamps: true
 });
 
 // Índices para buscas

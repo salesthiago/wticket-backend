@@ -4,17 +4,30 @@ import ticketRepository from "../repositories/ticket.repository.js";
 
 export const findAll = async (req, res) => {
   try {
-    const { search, session } = req.query;
-    const page = req?.page - 1 || 0;
-    const rowsPerPage = req?.perPage || 10;
-
-    const query = {};
-    const tickets = await ticketRepository.findAll(session);
-
+    const { session, category } = req.query;
+    const tickets = await ticketRepository.findAll(session, category);
     return res.status(200).json(tickets);
   } catch (err) {
     logger.error("contact FindALL error >>> ", err);
     res.status(500).json({ message: "Internal server error" });
+  }
+};
+
+export const updateSaleItems = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { saleItems, category } = req.body;
+    if (!id) return res.status(422).json({ message: 'ID not found' });
+
+    const data = {};
+    if (saleItems !== undefined) data.saleItems = saleItems;
+    if (category !== undefined) data.category = category;
+
+    const updated = await ticketRepository.update(id, data);
+    return res.status(200).json(updated);
+  } catch (err) {
+    logger.error('updateSaleItems error >>> ', err);
+    res.status(500).json({ message: 'Internal server error' });
   }
 };
 

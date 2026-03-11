@@ -3,6 +3,11 @@ import cors from 'cors';
 import cookieParser from 'cookie-parser';
 import routes from './routes/index.js';
 import { authenticate } from './middleware/auth.middleware.js';
+import path from 'path';
+import { fileURLToPath } from 'url';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
 const app = express();
 
@@ -38,6 +43,9 @@ app.use(cookieParser());
 
 // Health check
 app.get('/health', (req, res) => res.json({ status: 'ok', ts: Date.now() }));
+
+// static files for uploads
+app.use('/uploads', express.static(path.join(__dirname, '..', 'uploads')));
 
 // routes
 app.use('/api', routes);

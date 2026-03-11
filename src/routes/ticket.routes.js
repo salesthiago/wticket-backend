@@ -8,6 +8,7 @@ router.get('/', authenticate, ticketController.findAll);
 //router.post('/', authenticate, ticketController.create);
 router.put('/:id', authenticate, ticketController.update);
 router.get('/:id', authenticate, ticketController.findById);
+router.patch('/:id/sale-items', authenticate, ticketController.updateSaleItems);
 router.patch('/:id/:status', authenticate, ticketController.updateStatus);
 router.delete('/:id/destroy', authenticate, ticketController.destroy);
 

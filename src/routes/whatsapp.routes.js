@@ -2,6 +2,8 @@ import { Router } from 'express';
 import * as whatsappController from '../controller/whatsapp.controller.js';
 import { authenticate } from "../middleware/auth.middleware.js";
 
+
+
 const router = Router();
 
 router.post('/sessions', authenticate, whatsappController.createSession);
@@ -15,5 +17,10 @@ router.delete('/sessions/:sessionName', authenticate, whatsappController.destroy
 router.post('/send-message', authenticate, whatsappController.sendMessage);
 router.post('/sync/contacts', authenticate, whatsappController.syncContacts);
 router.get('/sync/status/:sessionName', authenticate, whatsappController.syncStatus);
+
+// Session Products
+router.get('/sessions/:sessionName/products', authenticate, whatsappController.getSessionProducts);
+router.post('/sessions/:sessionName/products', authenticate, whatsappController.addSessionProduct);
+router.delete('/sessions/:sessionName/products/:productId', authenticate, whatsappController.removeSessionProduct);
 
 export default router;
