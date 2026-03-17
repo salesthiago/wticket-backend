@@ -56,6 +56,16 @@ const TicketSchema = new mongoose.Schema({
     default: false,
     index: true
   },
+  aiHandled: {
+    type: Boolean,
+    default: false,
+    index: true
+  },
+  aiAgentId: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'AiAgent',
+    default: null
+  },
   resolution: {
     type: String
   },

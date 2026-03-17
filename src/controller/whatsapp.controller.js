@@ -215,7 +215,8 @@ export const updateSession = async (req, res) => {
       'initiationMessage',
       'initiationKeyword',
       'finalizationMessage',
-      'number'
+      'number',
+      'aiAgentId'
     ];
 
     // Filtra apenas os campos permitidos
@@ -309,6 +310,7 @@ export const getSession = async (req, res) => {
       });
     }
 
+    await session.populate('aiAgentId', 'nome tipo status');
     return res.json(session);
   } catch (error) {
     logger.error("Erro ao buscar sessão:", error);

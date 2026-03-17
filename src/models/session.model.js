@@ -54,7 +54,13 @@ const SessionSchema = new mongoose.Schema({
   products: [{
     type: mongoose.Schema.Types.ObjectId,
     ref: 'Product'
-  }]
+  }],
+  // Agente de IA vinculado a esta sessão (opcional)
+  aiAgentId: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'AiAgent',
+    default: null
+  }
 }, {
   timestamps: true
 });

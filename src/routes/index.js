@@ -13,6 +13,8 @@ import geminiRoutes from './gemini.routes.js'
 import productRoutes from './product.routes.js'
 import customerRoutes from './customer.routes.js'
 import leadRoutes from './lead.routes.js'
+import aiAgentRoutes from './ai-agent.routes.js'
+import aiProvidersRoutes from './ai-providers.routes.js'
 
 const router = express.Router();
 
@@ -29,5 +31,7 @@ router.use('/gemini', geminiRoutes);
 router.use('/products', productRoutes);
 router.use('/customers', customerRoutes);
 router.use('/leads', leadRoutes);
+router.use('/ai-agents', aiAgentRoutes);
+router.use('/ai-providers', aiProvidersRoutes);
 
 export default router
