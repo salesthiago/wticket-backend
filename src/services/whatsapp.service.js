@@ -5,6 +5,7 @@ import ticketRepository from "../repositories/ticket.repository.js";
 import syncService from "../services/sync.service.js";
 import botConfigRepository from "../repositories/bot-config.repository.js";
 import botAgendaService from "./bot-agenda.service.js";
+import aiWhatsappService from "./ai-whatsapp.service.js";
 import fs from "fs";
 import path from "path";
 
@@ -585,8 +586,71 @@ class WhatsAppService {
         return; // Bot processou, não precisa criar ticket novamente
       }
 
-      // Não tem bot vinculado - comportamento padrão
-      logger.info(`📝 Sem bot vinculado - criando ticket padrão para ${sessionName}`);
+      // ─── Caminho 2: Sessão tem Agente de IA vinculado ────────────────────────
+      if (session.aiAgentId) {
+        logger.info(`🤖 Sessão ${sessionName} possui agente IA vinculado - processando com IA`);
+
+        // Busca ou cria ticket
+        let ticket = await ticketRepository.findByContact(sessionName, contactNumber);
+
+        if (!ticket) {
+          ticket = await ticketRepository.create({
+            contactNumber,
+            contactName,
+            sessionName,
+            status: 'in_progress',
+            subject: 'Atendimento IA',
+            priority: 'medium',
+            aiHandled: true,
+            aiAgentId: session.aiAgentId
+          });
+          logger.info(`📋 Ticket IA criado: ${ticket._id}`);
+        } else if (ticket.status === 'opened' || ticket.status === 'finished') {
+          await ticketRepository.updateStatus(ticket._id, 'in_progress');
+          logger.info(`📋 Ticket ${ticket._id} reaberto para atendimento IA`);
+        }
+
+        const aiResponse = await aiWhatsappService.processMessage(
+          sessionName,
+          session,
+          contactNumber,
+          contactName,
+          message.body
+        );
+
+        if (aiResponse) {
+          await this.sendMessage(sessionName, fullContactId, aiResponse.message);
+
+          if (aiResponse.transferToHuman) {
+            await ticketRepository.updateStatus(ticket._id, 'opened', {
+              notes: 'Transferido pelo agente IA para atendimento humano'
+            });
+            logger.info(`👤 Ticket ${ticket._id} transferido para humano pelo agente IA`);
+          }
+
+          if (aiResponse.finishedByUser) {
+            await ticketRepository.updateStatus(ticket._id, 'finished', {
+              resolvedAt: new Date(),
+              closedAt: new Date(),
+              closedBy: 'ai',
+              resolution: 'Atendimento IA encerrado pelo cliente'
+            });
+            await aiWhatsappService.clearConversation(session.aiAgentId, contactNumber);
+            logger.info(`✅ Ticket ${ticket._id} finalizado pelo cliente via IA`);
+          }
+
+          if (aiResponse.error && !aiResponse.shouldContinue) {
+            await ticketRepository.updateStatus(ticket._id, 'opened', {
+              notes: `Erro no agente IA: ${aiResponse.error}`
+            });
+          }
+        }
+
+        return;
+      }
+
+      // ─── Caminho 3: Sem bot nem IA — comportamento padrão ─────────────────
+      logger.info(`📝 Sem bot ou IA vinculado - criando ticket padrão para ${sessionName}`);
       await syncService.processMessage(sessionName, message);
 
     } catch (error) {
