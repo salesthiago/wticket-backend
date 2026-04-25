@@ -1,0 +1,87 @@
+name: Deploy Backend to EC2
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+concurrency:
+  group: deploy-ec2
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    name: Deploy to EC2
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout código
+        uses: actions/checkout@v4
+
+      - name: Configurar chave SSH
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.EC2_SSH_PRIVATE_KEY }}" > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+          ssh-keyscan -H ${{ secrets.EC2_HOST }} >> ~/.ssh/known_hosts
+
+      - name: Sincronizar arquivos via rsync
+        run: |
+          rsync -avz --delete \
+            --exclude='.git' \
+            --exclude='.github' \
+            --exclude='node_modules' \
+            --exclude='.env' \
+            --exclude='tokens' \
+            --exclude='logs' \
+            --exclude='uploads' \
+            --exclude='.DS_Store' \
+            -e "ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=no" \
+            ./ ${{ secrets.EC2_USER }}@${{ secrets.EC2_HOST }}:~/wticket-deploy/
+
+      - name: Instalar dependências e reiniciar PM2
+        uses: appleboy/ssh-action@v1.0.3
+        env:
+          MONGO_URI: ${{ secrets.MONGO_URI }}
+          JWT_SECRET: ${{ secrets.JWT_SECRET }}
+          FRONTEND_URL: ${{ secrets.FRONTEND_URL }}
+          CHROME_PATH: ${{ secrets.CHROME_PATH }}
+        with:
+          host: ${{ secrets.EC2_HOST }}
+          username: ${{ secrets.EC2_USER }}
+          key: ${{ secrets.EC2_SSH_PRIVATE_KEY }}
+          envs: MONGO_URI,JWT_SECRET,FRONTEND_URL,CHROME_PATH
+          script_stop: true
+          script: |
+            set -e
+            cd ~/wticket-deploy
+
+            echo "📝 Gerando .env de produção..."
+            cat > .env <<EOF
+            PORT=3000
+            NODE_ENV=production
+            MONGO_URI=${MONGO_URI}
+            JWT_SECRET=${JWT_SECRET}
+            JWT_EXPIRES_IN=7d
+            FRONTEND_URL=${FRONTEND_URL}
+            LOG_LEVEL=info
+            PUPPETEER_EXECUTABLE_PATH=${CHROME_PATH}
+            EOF
+            chmod 600 .env
+
+            mkdir -p logs tokens uploads
+
+            echo "📦 Instalando dependências (npm ci)..."
+            npm ci --omit=dev
+
+            echo "🔄 Reiniciando aplicação com PM2..."
+            if pm2 describe wticket-backend > /dev/null 2>&1; then
+              pm2 reload ecosystem.config.cjs --update-env
+            else
+              pm2 start ecosystem.config.cjs
+              pm2 save
+            fi
+
+            echo "✅ Deploy concluído!"
+            pm2 status
