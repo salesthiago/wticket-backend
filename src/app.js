@@ -1,6 +1,8 @@
 import express from 'express';
 import cors from 'cors';
 import cookieParser from 'cookie-parser';
+import swaggerUi from 'swagger-ui-express';
+import swaggerSpec from './config/swagger.js';
 import routes from './routes/index.js';
 import { authenticate } from './middleware/auth.middleware.js';
 import path from 'path';
@@ -43,6 +45,13 @@ app.use(cookieParser());
 
 // Health check
 app.get('/health', (req, res) => res.json({ status: 'ok', ts: Date.now() }));
+
+// Swagger docs
+app.use('/api/docs', swaggerUi.serve, swaggerUi.setup(swaggerSpec, {
+  customSiteTitle: 'WTicket API Docs',
+  customCss: '.swagger-ui .topbar { display: none }'
+}));
+app.get('/api/docs.json', (req, res) => res.json(swaggerSpec));
 
 // static files for uploads
 app.use('/uploads', express.static(path.join(__dirname, '..', 'uploads')));
