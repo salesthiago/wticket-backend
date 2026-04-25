@@ -7,7 +7,7 @@
 
 set -e  # Parar em caso de erro
 
-DOMAIN="api-wticket.godprovider.com.br"
+DOMAIN="api.wticket.com.br"
 EMAIL="sales.go@gmail.com"  # Altere se necessário
 
 echo "🔒 Iniciando configuração SSL para $DOMAIN..."
@@ -59,7 +59,7 @@ echo "⚙️  Configurando Nginx..."
 cat > /etc/nginx/conf.d/api-wticket.conf << 'EOF'
 server {
     listen 80;
-    server_name api-wticket.godprovider.com.br;
+    server_name api.wticket.com.br;
 
     # Temporário: apenas para validação do Certbot
     location / {
@@ -123,18 +123,18 @@ cat > /etc/nginx/conf.d/api-wticket.conf << 'EOF'
 # Redirecionar HTTP para HTTPS
 server {
     listen 80;
-    server_name api-wticket.godprovider.com.br;
+    server_name api.wticket.com.br;
     return 301 https://$server_name$request_uri;
 }
 
 # HTTPS
 server {
     listen 443 ssl http2;
-    server_name api-wticket.godprovider.com.br;
+    server_name api.wticket.com.br;
 
     # Certificados SSL (gerados pelo Certbot)
-    ssl_certificate /etc/letsencrypt/live/api-wticket.godprovider.com.br/fullchain.pem;
-    ssl_certificate_key /etc/letsencrypt/live/api-wticket.godprovider.com.br/privkey.pem;
+    ssl_certificate /etc/letsencrypt/live/api.wticket.com.br/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/api.wticket.com.br/privkey.pem;
 
     # Configurações SSL recomendadas
     ssl_protocols TLSv1.2 TLSv1.3;
