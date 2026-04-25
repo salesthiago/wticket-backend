@@ -15,6 +15,7 @@ import customerRoutes from './customer.routes.js'
 import leadRoutes from './lead.routes.js'
 import aiAgentRoutes from './ai-agent.routes.js'
 import aiProvidersRoutes from './ai-providers.routes.js'
+import serviceOrderRoutes from './service-order.routes.js'
 
 const router = express.Router();
 
@@ -33,5 +34,6 @@ router.use('/customers', customerRoutes);
 router.use('/leads', leadRoutes);
 router.use('/ai-agents', aiAgentRoutes);
 router.use('/ai-providers', aiProvidersRoutes);
+router.use('/service-orders', serviceOrderRoutes);
 
 export default router
