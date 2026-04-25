@@ -7,7 +7,7 @@
 echo "🔍 Verificando status do Backend..."
 echo ""
 
-DOMAIN="api-wticket.godprovider.com.br"
+DOMAIN="api.wticket.com.br"
 
 echo "=============================================="
 echo "1️⃣ VERIFICAÇÃO DO SERVIÇO NODE.JS"
