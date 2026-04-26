@@ -1,6 +1,12 @@
 import mongoose from 'mongoose';
 
 const ContactSchema = new mongoose.Schema({
+  // TODO: make required after whatsapp ingestion services are tenant-aware
+  companyId: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'Company',
+    index: true
+  },
   name: { type: String, required: true },
   phone: { type: String, required: true },
   sessionName: { type: String, required: false },
@@ -11,6 +17,6 @@ const ContactSchema = new mongoose.Schema({
   state: { type: String, default: null },
 }, { timestamps: true });
 
-ContactSchema.index({ phone: 1 });
+ContactSchema.index({ companyId: 1, phone: 1 });
 
 export default mongoose.model('Contact', ContactSchema);

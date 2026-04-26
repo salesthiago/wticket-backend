@@ -128,7 +128,9 @@ class WhatsAppService {
     }
   }
 
-  async createSession(sessionName, isReconnect = false) {
+  // TODO: multi-tenant — sessionName is only globally unique per (companyId, name).
+  // findByName/updateOrCreate by name alone may be ambiguous across companies.
+  async createSession(sessionName, isReconnect = false, companyId = null) {
     try {
       logger.info(
         `━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━`
@@ -140,13 +142,15 @@ class WhatsAppService {
         `━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━`
       );
 
-      // ✅ SEMPRE usar o nome real
-      logger.debug(`[${sessionName}] Atualizando status no banco de dados para 'initializing'`);
-      await sessionRepository.updateOrCreate(sessionName, {
+      const upsertData = {
         name: sessionName,
         status: "initializing",
         lastActivity: new Date(),
-      });
+      };
+      if (companyId) upsertData.companyId = companyId;
+
+      logger.debug(`[${sessionName}] Atualizando status no banco de dados para 'initializing'`);
+      await sessionRepository.updateOrCreate(sessionName, upsertData);
       logger.debug(`[${sessionName}] Status atualizado no banco de dados com sucesso`);
 
       logger.debug(`[${sessionName}] Adicionando sessão ao mapa de memória`);

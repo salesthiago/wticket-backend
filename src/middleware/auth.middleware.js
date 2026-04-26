@@ -38,3 +38,29 @@ export const verifyToken = (token) => {
     return null;
   }
 };
+
+// Require the authenticated user to belong to a Company (tenant scope)
+export const requireTenant = (req, res, next) => {
+  if (!req.user?.companyId) {
+    return res.status(403).json({ message: "Tenant access required" });
+  }
+  next();
+};
+
+// Require the authenticated user to be a super_admin
+export const requireSuperAdmin = (req, res, next) => {
+  if (req.user?.role !== "super_admin") {
+    return res.status(403).json({ message: "Super admin only" });
+  }
+  next();
+};
+
+// Require the company to have a specific module active.
+// Relies on JWT carrying `modules` array of active module codes.
+export const requireModule = (code) => (req, res, next) => {
+  const modules = req.user?.modules || [];
+  if (!modules.includes(code)) {
+    return res.status(403).json({ message: `Module '${code}' is not active for this company` });
+  }
+  next();
+};

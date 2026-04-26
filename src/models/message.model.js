@@ -1,6 +1,12 @@
 import mongoose from 'mongoose';
 
 const MessageSchema = new mongoose.Schema({
+  // TODO: make required after message-processor service is tenant-aware
+  companyId: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'Company',
+    index: true
+  },
   ticketId: {
     type: mongoose.Schema.Types.ObjectId,
     ref: 'Ticket',

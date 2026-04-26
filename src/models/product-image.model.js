@@ -1,6 +1,12 @@
 import mongoose from 'mongoose';
 
 const ProductImageSchema = new mongoose.Schema({
+  companyId: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'Company',
+    required: true,
+    index: true
+  },
   product: {
     type: mongoose.Schema.Types.ObjectId,
     ref: 'Product',

@@ -7,6 +7,7 @@
     "start": "node src/server.js",
     "dev": "nodemon src/server.js",
     "seed": "node src/scripts/seed.js",
+    "seed:platform": "node src/scripts/seed-platform.js",
     "seed:bot": "node src/seeds/bot-appointment.seed.js",
     "seed:church": "node src/seeds/bot-church-all.seed.js",
     "seed:church:main": "node src/seeds/bot-church-main.seed.js",
@@ -36,9 +37,11 @@
     "socket.io": "^4.8.1",
     "swagger-jsdoc": "^6.2.8",
     "swagger-ui-express": "^5.0.1",
-    "winston": "^3.17.0"
+    "winston": "^3.17.0",
+    "yamljs": "^0.3.0"
   },
   "devDependencies": {
-    "nodemon": "^3.1.10"
+    "nodemon": "^3.1.10",
+    "swagger-autogen": "^2.23.7"
   }
 }

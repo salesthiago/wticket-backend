@@ -6,11 +6,12 @@ import Appointment from '../models/appointment.model.js';
 
 export const findAll = async (req, res) => {
   try {
+    const companyId = req.user.companyId;
     const { search, status, startDate, endDate } = req.query;
     const page = parseInt(req.query.page) - 1 || 0;
     const rowsPerPage = parseInt(req.query.perPage) || 10;
 
-    const query = {};
+    const query = { companyId };
 
     if (search) {
       query.$or = [
@@ -20,9 +21,7 @@ export const findAll = async (req, res) => {
       ];
     }
 
-    if (status) {
-      query.status = status;
-    }
+    if (status) query.status = status;
 
     if (startDate && endDate) {
       query.scheduledDate = {
@@ -56,18 +55,15 @@ export const findAll = async (req, res) => {
 
 export const findById = async (req, res) => {
   try {
+    const companyId = req.user.companyId;
     const { id } = req.params;
-    if (!id) {
-      return res.status(422).json({ message: 'ID not provided' });
-    }
+    if (!id) return res.status(422).json({ message: 'ID not provided' });
 
-    const appointment = await Appointment.findById(id)
+    const appointment = await Appointment.findOne({ _id: id, companyId })
       .populate('contactId', 'name email phone')
       .populate('assignedTo', 'name email');
 
-    if (!appointment) {
-      return res.status(404).json({ message: 'Appointment not found!' });
-    }
+    if (!appointment) return res.status(404).json({ message: 'Appointment not found!' });
 
     return res.json(appointment);
   } catch (err) {
@@ -78,6 +74,7 @@ export const findById = async (req, res) => {
 
 export const create = async (req, res) => {
   try {
+    const companyId = req.user.companyId;
     const { contactId, phone, scheduledDate, scheduledTime, description, service, assignedTo, status } = req.body;
 
     if (!contactId || !phone || !scheduledDate || !scheduledTime || !description) {
@@ -87,6 +84,7 @@ export const create = async (req, res) => {
     }
 
     const appointmentData = {
+      companyId,
       contactId,
       phone,
       scheduledDate,
@@ -99,11 +97,11 @@ export const create = async (req, res) => {
 
     const appointment = await appointmentRepository.create(appointmentData);
 
-    const populatedAppointment = await Appointment.findById(appointment._id)
+    const populated = await Appointment.findById(appointment._id)
       .populate('contactId', 'name email phone')
       .populate('assignedTo', 'name email');
 
-    return res.status(201).json(populatedAppointment);
+    return res.status(201).json(populated);
   } catch (err) {
     logger.error('Error to create appointment >>> ', err);
     return res.status(500).json({ message: 'Internal server error' });
@@ -112,23 +110,20 @@ export const create = async (req, res) => {
 
 export const update = async (req, res) => {
   try {
+    const companyId = req.user.companyId;
     const { id } = req.params;
-    if (!id) {
-      return res.status(422).json({ message: 'ID not provided' });
-    }
+    if (!id) return res.status(422).json({ message: 'ID not provided' });
 
-    const appointment = await Appointment.findById(id);
-    if (!appointment) {
-      return res.status(404).json({ message: 'Appointment not found!' });
-    }
+    const appointment = await Appointment.findOne({ _id: id, companyId });
+    if (!appointment) return res.status(404).json({ message: 'Appointment not found!' });
 
-    const updated = await appointmentRepository.update(id, req.body);
+    const updated = await appointmentRepository.update(id, req.body, { companyId });
 
-    const populatedAppointment = await Appointment.findById(updated._id)
+    const populated = await Appointment.findById(updated._id)
       .populate('contactId', 'name email phone')
       .populate('assignedTo', 'name email');
 
-    return res.json(populatedAppointment);
+    return res.json(populated);
   } catch (err) {
     logger.error('appointmentController Update error >>>', err);
     return res.status(500).json({ message: 'Internal server error' });
@@ -137,17 +132,14 @@ export const update = async (req, res) => {
 
 export const destroy = async (req, res) => {
   try {
+    const companyId = req.user.companyId;
     const { id } = req.params;
-    if (!id) {
-      return res.status(422).json({ message: 'ID not provided' });
-    }
+    if (!id) return res.status(422).json({ message: 'ID not provided' });
 
-    const appointment = await Appointment.findById(id);
-    if (!appointment) {
-      return res.status(404).json({ message: 'Appointment not found!' });
-    }
+    const appointment = await Appointment.findOne({ _id: id, companyId });
+    if (!appointment) return res.status(404).json({ message: 'Appointment not found!' });
 
-    await Appointment.findByIdAndDelete(id);
+    await Appointment.findOneAndDelete({ _id: id, companyId });
 
     return res.status(200).json({ message: 'Appointment deleted successfully' });
   } catch (err) {
@@ -158,23 +150,20 @@ export const destroy = async (req, res) => {
 
 export const cancel = async (req, res) => {
   try {
+    const companyId = req.user.companyId;
     const { id } = req.params;
     const { cancelReason } = req.body;
 
-    if (!id) {
-      return res.status(422).json({ message: 'ID not provided' });
-    }
+    if (!id) return res.status(422).json({ message: 'ID not provided' });
 
-    const appointment = await Appointment.findById(id);
-    if (!appointment) {
-      return res.status(404).json({ message: 'Appointment not found!' });
-    }
+    const appointment = await Appointment.findOne({ _id: id, companyId });
+    if (!appointment) return res.status(404).json({ message: 'Appointment not found!' });
 
     const updated = await appointmentRepository.update(id, {
       status: 'cancelled',
       cancelledAt: new Date(),
       cancelReason: cancelReason || 'No reason provided'
-    });
+    }, { companyId });
 
     return res.json(updated);
   } catch (err) {

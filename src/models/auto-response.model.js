@@ -29,6 +29,12 @@ const validationSchema = new mongoose.Schema({
 }, { _id: false });
 
 const autoResponseSchema = new mongoose.Schema({
+  companyId: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'Company',
+    required: true,
+    index: true
+  },
   botConfig: {
     type: mongoose.Schema.Types.ObjectId,
     required: false,
@@ -91,6 +97,6 @@ const autoResponseSchema = new mongoose.Schema({
   timestamps: true
 });
 
-autoResponseSchema.index({ botConfig: 1, priority: 1 });
+autoResponseSchema.index({ companyId: 1, botConfig: 1, priority: 1 });
 
 export default mongoose.model('AutoResponse', autoResponseSchema);

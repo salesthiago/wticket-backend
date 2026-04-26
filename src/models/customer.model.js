@@ -12,6 +12,12 @@ const AddressSchema = new mongoose.Schema({
 }, { _id: false });
 
 const CustomerSchema = new mongoose.Schema({
+  companyId: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'Company',
+    required: true,
+    index: true
+  },
   name: {
     type: String,
     required: true,
@@ -70,6 +76,6 @@ const CustomerSchema = new mongoose.Schema({
 });
 
 CustomerSchema.index({ name: 'text', email: 'text' });
-CustomerSchema.index({ isActive: 1, createdAt: -1 });
+CustomerSchema.index({ companyId: 1, isActive: 1, createdAt: -1 });
 
 export default mongoose.model('Customer', CustomerSchema);

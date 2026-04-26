@@ -8,7 +8,17 @@ const UserSchema = new mongoose.Schema({
   email: { type: String, required: true, unique: true, lowercase: true, trim: true },
   status: { type: String, default: 'disabled' },
   password: { type: String, required: true },
-  role: { type: String, enum: ['default', 'administrator'], default: 'default' },
+  role: {
+    type: String,
+    enum: ['default', 'administrator', 'company_admin', 'super_admin'],
+    default: 'default'
+  },
+  companyId: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'Company',
+    default: null,
+    index: true
+  },
 }, { timestamps: true });
 
 

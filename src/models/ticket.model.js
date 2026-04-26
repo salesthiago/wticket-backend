@@ -1,8 +1,14 @@
 import mongoose from 'mongoose';
 
 const TicketSchema = new mongoose.Schema({
-  contactNumber: { 
-    type: String, 
+  // TODO: make required after message-processor service is tenant-aware
+  companyId: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'Company',
+    index: true
+  },
+  contactNumber: {
+    type: String,
     required: true,
     index: true
   },
@@ -95,9 +101,9 @@ const TicketSchema = new mongoose.Schema({
 });
 
 // Índices para buscas
-TicketSchema.index({ sessionName: 1, status: 1 });
-TicketSchema.index({ contactNumber: 1 });
-TicketSchema.index({ assignedTo: 1 });
-TicketSchema.index({ createdAt: -1 });
+TicketSchema.index({ companyId: 1, sessionName: 1, status: 1 });
+TicketSchema.index({ companyId: 1, contactNumber: 1 });
+TicketSchema.index({ companyId: 1, assignedTo: 1 });
+TicketSchema.index({ companyId: 1, createdAt: -1 });
 
 export default mongoose.model('Ticket', TicketSchema);

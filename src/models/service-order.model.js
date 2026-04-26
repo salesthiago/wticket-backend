@@ -22,10 +22,15 @@ const StatusHistorySchema = new mongoose.Schema({
 }, { _id: false });
 
 const ServiceOrderSchema = new mongoose.Schema({
-  // Numero sequencial da OS
+  companyId: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'Company',
+    required: true,
+    index: true
+  },
+  // Numero sequencial da OS (unique per company)
   orderNumber: {
     type: String,
-    unique: true,
     index: true
   },
 
@@ -159,17 +164,21 @@ const ServiceOrderSchema = new mongoose.Schema({
 });
 
 // Indexes
-ServiceOrderSchema.index({ isActive: 1, createdAt: -1 });
-ServiceOrderSchema.index({ customerId: 1, status: 1 });
-ServiceOrderSchema.index({ technicianId: 1, status: 1 });
+ServiceOrderSchema.index({ companyId: 1, isActive: 1, createdAt: -1 });
+ServiceOrderSchema.index({ companyId: 1, customerId: 1, status: 1 });
+ServiceOrderSchema.index({ companyId: 1, technicianId: 1, status: 1 });
+ServiceOrderSchema.index({ companyId: 1, orderNumber: 1 }, { unique: true, sparse: true });
 ServiceOrderSchema.index({ 'equipment.serialNumber': 1 }, { sparse: true });
 
-// Gerar numero sequencial da OS antes de salvar
+// Gerar numero sequencial da OS antes de salvar (sequencia por empresa)
 ServiceOrderSchema.pre('save', async function (next) {
   if (this.isNew && !this.orderNumber) {
     const year = new Date().getFullYear();
     const lastOrder = await mongoose.model('ServiceOrder')
-      .findOne({ orderNumber: { $regex: `^OS-${year}` } })
+      .findOne({
+        companyId: this.companyId,
+        orderNumber: { $regex: `^OS-${year}` }
+      })
       .sort({ orderNumber: -1 })
       .lean();
 

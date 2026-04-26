@@ -3,88 +3,73 @@ import logger from '../utils/logger.js';
 
 class CustomerRepository {
   async create(data) {
-    try {
-      const customer = new Customer(data);
-      return await customer.save();
-    } catch (error) {
-      throw new Error(error.message);
-    }
+    if (!data.companyId) throw new Error('companyId is required');
+    const customer = new Customer(data);
+    return await customer.save();
   }
 
-  async findAll({ search, page = 0, limit = 10 } = {}) {
-    try {
-      const query = { isActive: true };
+  async findAll(companyId, { search, page = 0, limit = 10 } = {}) {
+    if (!companyId) throw new Error('companyId is required');
+    const query = { companyId, isActive: true };
 
-      if (search) {
-        query.$or = [
-          { name: { $regex: search, $options: 'i' } },
-          { email: { $regex: search, $options: 'i' } },
-          { phone: { $regex: search, $options: 'i' } },
-          { document: { $regex: search, $options: 'i' } }
-        ];
-      }
-
-      const [records, total] = await Promise.all([
-        Customer.find(query)
-          .sort({ createdAt: -1 })
-          .skip(page * limit)
-          .limit(limit)
-          .exec(),
-        Customer.countDocuments(query)
-      ]);
-
-      return { records, total, page, limit };
-    } catch (error) {
-      throw new Error(error.message);
+    if (search) {
+      query.$or = [
+        { name: { $regex: search, $options: 'i' } },
+        { email: { $regex: search, $options: 'i' } },
+        { phone: { $regex: search, $options: 'i' } },
+        { document: { $regex: search, $options: 'i' } }
+      ];
     }
+
+    const [records, total] = await Promise.all([
+      Customer.find(query)
+        .sort({ createdAt: -1 })
+        .skip(page * limit)
+        .limit(limit)
+        .exec(),
+      Customer.countDocuments(query)
+    ]);
+
+    return { records, total, page, limit };
   }
 
-  async findById(id) {
-    try {
-      return await Customer.findOne({ _id: id, isActive: true });
-    } catch (error) {
-      throw new Error(error.message);
-    }
+  async findById(companyId, id) {
+    if (!companyId) throw new Error('companyId is required');
+    return await Customer.findOne({ _id: id, companyId, isActive: true });
   }
 
-  async findByDocument(document) {
-    try {
-      return await Customer.findOne({ document, isActive: true });
-    } catch (error) {
-      throw new Error(error.message);
-    }
+  async findByDocument(companyId, document) {
+    if (!companyId) throw new Error('companyId is required');
+    return await Customer.findOne({ companyId, document, isActive: true });
   }
 
-  async findByPhone(phone) {
-    try {
-      return await Customer.findOne({ phone, isActive: true });
-    } catch (error) {
-      throw new Error(error.message);
-    }
+  async findByPhone(companyId, phone) {
+    if (!companyId) throw new Error('companyId is required');
+    return await Customer.findOne({ companyId, phone, isActive: true });
   }
 
-  async update(id, data) {
+  async update(companyId, id, data) {
+    if (!companyId) throw new Error('companyId is required');
+    const patch = { ...data };
+    delete patch.companyId;
+    return await Customer.findOneAndUpdate(
+      { _id: id, companyId, isActive: true },
+      { $set: patch },
+      { new: true }
+    );
+  }
+
+  async softDelete(companyId, id) {
+    if (!companyId) throw new Error('companyId is required');
     try {
       return await Customer.findOneAndUpdate(
-        { _id: id, isActive: true },
-        { $set: data },
-        { new: true }
-      );
-    } catch (error) {
-      throw new Error(error.message);
-    }
-  }
-
-  async softDelete(id) {
-    try {
-      return await Customer.findOneAndUpdate(
-        { _id: id, isActive: true },
+        { _id: id, companyId, isActive: true },
         { $set: { isActive: false, deletedAt: new Date() } },
         { new: true }
       );
     } catch (error) {
       logger.error('CustomerRepository :: softDelete >> ', error);
-      throw new Error(error.message);
+      throw error;
     }
   }
 }

@@ -1,10 +1,15 @@
 import mongoose from 'mongoose';
 
 const SessionSchema = new mongoose.Schema({
-  name: { 
-    type: String, 
-    required: true, 
-    unique: true 
+  companyId: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'Company',
+    required: true,
+    index: true
+  },
+  name: {
+    type: String,
+    required: true
   },
   status: { 
     type: String, 
@@ -65,8 +70,8 @@ const SessionSchema = new mongoose.Schema({
   timestamps: true
 });
 
-// Índice para buscas por nome e status
-SessionSchema.index({ name: 1 });
+// Índice para buscas por nome e status (nome único por empresa)
+SessionSchema.index({ companyId: 1, name: 1 }, { unique: true });
 SessionSchema.index({ status: 1 });
 SessionSchema.index({ lastActivity: -1 });
 

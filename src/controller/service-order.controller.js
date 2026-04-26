@@ -4,9 +4,10 @@ import customerRepository from '../repositories/customer.repository.js';
 
 export const findAll = async (req, res) => {
   try {
+    const companyId = req.user.companyId;
     const { search, status, priority, technicianId, customerId, page, limit } = req.query;
 
-    const result = await serviceOrderRepository.findAll({
+    const result = await serviceOrderRepository.findAll(companyId, {
       search,
       status,
       priority,
@@ -25,12 +26,11 @@ export const findAll = async (req, res) => {
 
 export const findById = async (req, res) => {
   try {
+    const companyId = req.user.companyId;
     const { id } = req.params;
 
-    const serviceOrder = await serviceOrderRepository.findById(id);
-    if (!serviceOrder) {
-      return res.status(404).json({ message: 'Service order not found' });
-    }
+    const serviceOrder = await serviceOrderRepository.findById(companyId, id);
+    if (!serviceOrder) return res.status(404).json({ message: 'Service order not found' });
 
     return res.status(200).json(serviceOrder);
   } catch (err) {
@@ -41,12 +41,11 @@ export const findById = async (req, res) => {
 
 export const findByOrderNumber = async (req, res) => {
   try {
+    const companyId = req.user.companyId;
     const { orderNumber } = req.params;
 
-    const serviceOrder = await serviceOrderRepository.findByOrderNumber(orderNumber);
-    if (!serviceOrder) {
-      return res.status(404).json({ message: 'Service order not found' });
-    }
+    const serviceOrder = await serviceOrderRepository.findByOrderNumber(companyId, orderNumber);
+    if (!serviceOrder) return res.status(404).json({ message: 'Service order not found' });
 
     return res.status(200).json(serviceOrder);
   } catch (err) {
@@ -57,9 +56,10 @@ export const findByOrderNumber = async (req, res) => {
 
 export const findByCustomer = async (req, res) => {
   try {
+    const companyId = req.user.companyId;
     const { customerId } = req.params;
 
-    const orders = await serviceOrderRepository.findByCustomer(customerId);
+    const orders = await serviceOrderRepository.findByCustomer(companyId, customerId);
     return res.status(200).json(orders);
   } catch (err) {
     logger.error('ServiceOrderController :: findByCustomer >> ', err);
@@ -69,6 +69,7 @@ export const findByCustomer = async (req, res) => {
 
 export const create = async (req, res) => {
   try {
+    const companyId = req.user.companyId;
     const { customerId, equipment, reportedIssue, priority, technicianId, estimatedCompletionDate, internalNotes } = req.body;
 
     if (!customerId || !equipment?.type || !reportedIssue) {
@@ -77,12 +78,11 @@ export const create = async (req, res) => {
       });
     }
 
-    const customer = await customerRepository.findById(customerId);
-    if (!customer) {
-      return res.status(404).json({ message: 'Customer not found' });
-    }
+    const customer = await customerRepository.findById(companyId, customerId);
+    if (!customer) return res.status(404).json({ message: 'Customer not found' });
 
     const serviceOrder = await serviceOrderRepository.create({
+      companyId,
       customerId,
       equipment,
       reportedIssue,
@@ -92,7 +92,7 @@ export const create = async (req, res) => {
       internalNotes,
       statusHistory: [{
         status: 'open',
-        changedBy: req.userId,
+        changedBy: req.user.sub,
         notes: 'Ordem de serviço criada'
       }]
     });
@@ -106,6 +106,7 @@ export const create = async (req, res) => {
 
 export const update = async (req, res) => {
   try {
+    const companyId = req.user.companyId;
     const { id } = req.params;
     const body = req.body;
 
@@ -113,15 +114,12 @@ export const update = async (req, res) => {
       return res.status(422).json({ message: 'Body is empty' });
     }
 
-    // Nao permitir alterar status diretamente pelo update (usar updateStatus)
     delete body.status;
     delete body.statusHistory;
     delete body.orderNumber;
 
-    const serviceOrder = await serviceOrderRepository.update(id, body);
-    if (!serviceOrder) {
-      return res.status(404).json({ message: 'Service order not found' });
-    }
+    const serviceOrder = await serviceOrderRepository.update(companyId, id, body);
+    if (!serviceOrder) return res.status(404).json({ message: 'Service order not found' });
 
     return res.status(200).json(serviceOrder);
   } catch (err) {
@@ -132,22 +130,19 @@ export const update = async (req, res) => {
 
 export const updateStatus = async (req, res) => {
   try {
+    const companyId = req.user.companyId;
     const { id } = req.params;
     const { status, notes } = req.body;
 
-    if (!status) {
-      return res.status(422).json({ message: 'Status is required' });
-    }
+    if (!status) return res.status(422).json({ message: 'Status is required' });
 
     const validStatuses = ['open', 'diagnosing', 'quoted', 'approved', 'in_progress', 'completed', 'delivered', 'cancelled'];
     if (!validStatuses.includes(status)) {
       return res.status(422).json({ message: `Invalid status. Valid: ${validStatuses.join(', ')}` });
     }
 
-    const serviceOrder = await serviceOrderRepository.findById(id);
-    if (!serviceOrder) {
-      return res.status(404).json({ message: 'Service order not found' });
-    }
+    const serviceOrder = await serviceOrderRepository.findById(companyId, id);
+    if (!serviceOrder) return res.status(404).json({ message: 'Service order not found' });
 
     const updateData = { status };
 
@@ -168,14 +163,14 @@ export const updateStatus = async (req, res) => {
       updateData.cancelReason = notes || '';
     }
 
-    await serviceOrderRepository.update(id, updateData);
-    await serviceOrderRepository.addStatusHistory(id, {
+    await serviceOrderRepository.update(companyId, id, updateData);
+    await serviceOrderRepository.addStatusHistory(companyId, id, {
       status,
-      changedBy: req.userId,
+      changedBy: req.user.sub,
       notes: notes || ''
     });
 
-    const updated = await serviceOrderRepository.findById(id);
+    const updated = await serviceOrderRepository.findById(companyId, id);
     return res.status(200).json(updated);
   } catch (err) {
     logger.error('ServiceOrderController :: updateStatus >> ', err);
@@ -185,26 +180,23 @@ export const updateStatus = async (req, res) => {
 
 export const addDiagnosis = async (req, res) => {
   try {
+    const companyId = req.user.companyId;
     const { id } = req.params;
     const { diagnosis, services, parts, estimatedCost } = req.body;
 
-    if (!diagnosis) {
-      return res.status(422).json({ message: 'Diagnosis is required' });
-    }
+    if (!diagnosis) return res.status(422).json({ message: 'Diagnosis is required' });
 
-    const serviceOrder = await serviceOrderRepository.findById(id);
-    if (!serviceOrder) {
-      return res.status(404).json({ message: 'Service order not found' });
-    }
+    const serviceOrder = await serviceOrderRepository.findById(companyId, id);
+    if (!serviceOrder) return res.status(404).json({ message: 'Service order not found' });
 
     const updateData = { diagnosis };
     if (services) updateData.services = services;
     if (parts) updateData.parts = parts;
     if (estimatedCost !== undefined) updateData.estimatedCost = estimatedCost;
 
-    await serviceOrderRepository.update(id, updateData);
+    await serviceOrderRepository.update(companyId, id, updateData);
 
-    const updated = await serviceOrderRepository.findById(id);
+    const updated = await serviceOrderRepository.findById(companyId, id);
     return res.status(200).json(updated);
   } catch (err) {
     logger.error('ServiceOrderController :: addDiagnosis >> ', err);
@@ -214,7 +206,8 @@ export const addDiagnosis = async (req, res) => {
 
 export const dashboard = async (req, res) => {
   try {
-    const statusCounts = await serviceOrderRepository.countByStatus();
+    const companyId = req.user.companyId;
+    const statusCounts = await serviceOrderRepository.countByStatus(companyId);
 
     const summary = {
       open: 0,
@@ -242,12 +235,11 @@ export const dashboard = async (req, res) => {
 
 export const destroy = async (req, res) => {
   try {
+    const companyId = req.user.companyId;
     const { id } = req.params;
 
-    const serviceOrder = await serviceOrderRepository.softDelete(id);
-    if (!serviceOrder) {
-      return res.status(404).json({ message: 'Service order not found' });
-    }
+    const serviceOrder = await serviceOrderRepository.softDelete(companyId, id);
+    if (!serviceOrder) return res.status(404).json({ message: 'Service order not found' });
 
     return res.status(200).json({ message: 'Service order deleted successfully' });
   } catch (err) {

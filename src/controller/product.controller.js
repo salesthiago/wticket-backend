@@ -5,9 +5,10 @@ import productRepository from '../repositories/product.repository.js';
 
 export const findAll = async (req, res) => {
   try {
+    const companyId = req.user.companyId;
     const { search, isActive, page, limit } = req.query;
 
-    const result = await productRepository.findAll({
+    const result = await productRepository.findAll(companyId, {
       search,
       isActive: isActive !== undefined ? isActive === 'true' : undefined,
       page: page ? parseInt(page) - 1 : 0,
@@ -23,12 +24,11 @@ export const findAll = async (req, res) => {
 
 export const findById = async (req, res) => {
   try {
+    const companyId = req.user.companyId;
     const { id } = req.params;
 
-    const product = await productRepository.findById(id);
-    if (!product) {
-      return res.status(404).json({ message: 'Product not found' });
-    }
+    const product = await productRepository.findById(companyId, id);
+    if (!product) return res.status(404).json({ message: 'Product not found' });
 
     return res.status(200).json(product);
   } catch (err) {
@@ -39,18 +39,20 @@ export const findById = async (req, res) => {
 
 export const create = async (req, res) => {
   try {
+    const companyId = req.user.companyId;
     const { name, sku, ncmCode, description, price, stock, isActive, isVirtual, trackStock, downloadUrl } = req.body;
 
     if (!name || !sku || price === undefined) {
       return res.status(422).json({ message: 'Fields name, sku and price are required' });
     }
 
-    const existing = await productRepository.findBySku(sku);
+    const existing = await productRepository.findBySku(companyId, sku);
     if (existing) {
       return res.status(409).json({ message: 'SKU already in use' });
     }
 
     const product = await productRepository.create({
+      companyId,
       name,
       sku,
       ncmCode,
@@ -72,6 +74,7 @@ export const create = async (req, res) => {
 
 export const update = async (req, res) => {
   try {
+    const companyId = req.user.companyId;
     const { id } = req.params;
     const body = req.body;
 
@@ -79,10 +82,8 @@ export const update = async (req, res) => {
       return res.status(422).json({ message: 'Body is empty' });
     }
 
-    const product = await productRepository.update(id, body);
-    if (!product) {
-      return res.status(404).json({ message: 'Product not found' });
-    }
+    const product = await productRepository.update(companyId, id, body);
+    if (!product) return res.status(404).json({ message: 'Product not found' });
 
     return res.status(200).json(product);
   } catch (err) {
@@ -93,6 +94,7 @@ export const update = async (req, res) => {
 
 export const updateStock = async (req, res) => {
   try {
+    const companyId = req.user.companyId;
     const { id } = req.params;
     const { quantity } = req.body;
 
@@ -100,10 +102,8 @@ export const updateStock = async (req, res) => {
       return res.status(422).json({ message: 'Field quantity is required and must be a number' });
     }
 
-    const product = await productRepository.updateStock(id, parseInt(quantity));
-    if (!product) {
-      return res.status(404).json({ message: 'Product not found' });
-    }
+    const product = await productRepository.updateStock(companyId, id, parseInt(quantity));
+    if (!product) return res.status(404).json({ message: 'Product not found' });
 
     return res.status(200).json(product);
   } catch (err) {
@@ -114,12 +114,11 @@ export const updateStock = async (req, res) => {
 
 export const destroy = async (req, res) => {
   try {
+    const companyId = req.user.companyId;
     const { id } = req.params;
 
-    const product = await productRepository.delete(id);
-    if (!product) {
-      return res.status(404).json({ message: 'Product not found' });
-    }
+    const product = await productRepository.delete(companyId, id);
+    if (!product) return res.status(404).json({ message: 'Product not found' });
 
     return res.status(200).json({ message: 'Product deleted successfully' });
   } catch (err) {
@@ -132,9 +131,10 @@ export const destroy = async (req, res) => {
 
 export const getImages = async (req, res) => {
   try {
+    const companyId = req.user.companyId;
     const { id } = req.params;
 
-    const images = await productRepository.findImagesByProduct(id);
+    const images = await productRepository.findImagesByProduct(companyId, id);
     return res.status(200).json(images);
   } catch (err) {
     logger.error('ProductController :: getImages >> ', err);
@@ -144,6 +144,7 @@ export const getImages = async (req, res) => {
 
 export const addImage = async (req, res) => {
   try {
+    const companyId = req.user.companyId;
     const { id } = req.params;
 
     let url, filename, mimetype, size, altText, order;
@@ -165,6 +166,7 @@ export const addImage = async (req, res) => {
     }
 
     const image = await productRepository.addImage({
+      companyId,
       product: id,
       url,
       filename,
@@ -183,12 +185,11 @@ export const addImage = async (req, res) => {
 
 export const setMainImage = async (req, res) => {
   try {
+    const companyId = req.user.companyId;
     const { id, imageId } = req.params;
 
-    const product = await productRepository.setMainImage(id, imageId);
-    if (!product) {
-      return res.status(404).json({ message: 'Product not found' });
-    }
+    const product = await productRepository.setMainImage(companyId, id, imageId);
+    if (!product) return res.status(404).json({ message: 'Product not found' });
 
     return res.status(200).json(product);
   } catch (err) {
@@ -199,12 +200,11 @@ export const setMainImage = async (req, res) => {
 
 export const deleteImage = async (req, res) => {
   try {
+    const companyId = req.user.companyId;
     const { imageId } = req.params;
 
-    const image = await productRepository.deleteImage(imageId);
-    if (!image) {
-      return res.status(404).json({ message: 'Image not found' });
-    }
+    const image = await productRepository.deleteImage(companyId, imageId);
+    if (!image) return res.status(404).json({ message: 'Image not found' });
 
     return res.status(200).json({ message: 'Image deleted successfully' });
   } catch (err) {

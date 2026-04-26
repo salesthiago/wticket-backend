@@ -4,9 +4,10 @@ import customerRepository from '../repositories/customer.repository.js';
 
 export const findAll = async (req, res) => {
   try {
+    const companyId = req.user.companyId;
     const { search, status, page, limit } = req.query;
 
-    const result = await leadRepository.findAll({
+    const result = await leadRepository.findAll(companyId, {
       search,
       status,
       page: page ? parseInt(page) - 1 : 0,
@@ -22,12 +23,11 @@ export const findAll = async (req, res) => {
 
 export const findById = async (req, res) => {
   try {
+    const companyId = req.user.companyId;
     const { id } = req.params;
 
-    const lead = await leadRepository.findById(id);
-    if (!lead) {
-      return res.status(404).json({ message: 'Lead not found' });
-    }
+    const lead = await leadRepository.findById(companyId, id);
+    if (!lead) return res.status(404).json({ message: 'Lead not found' });
 
     return res.status(200).json(lead);
   } catch (err) {
@@ -38,13 +38,13 @@ export const findById = async (req, res) => {
 
 export const create = async (req, res) => {
   try {
+    const companyId = req.user.companyId;
     const { name, phone, email, documentType, document, address, notes } = req.body;
 
-    if (!name) {
-      return res.status(422).json({ message: 'Field name is required' });
-    }
+    if (!name) return res.status(422).json({ message: 'Field name is required' });
 
     const lead = await leadRepository.create({
+      companyId,
       name,
       phone,
       email,
@@ -63,6 +63,7 @@ export const create = async (req, res) => {
 
 export const update = async (req, res) => {
   try {
+    const companyId = req.user.companyId;
     const { id } = req.params;
     const body = req.body;
 
@@ -70,10 +71,8 @@ export const update = async (req, res) => {
       return res.status(422).json({ message: 'Body is empty' });
     }
 
-    const lead = await leadRepository.update(id, body);
-    if (!lead) {
-      return res.status(404).json({ message: 'Lead not found' });
-    }
+    const lead = await leadRepository.update(companyId, id, body);
+    if (!lead) return res.status(404).json({ message: 'Lead not found' });
 
     return res.status(200).json(lead);
   } catch (err) {
@@ -84,25 +83,25 @@ export const update = async (req, res) => {
 
 export const convertToCustomer = async (req, res) => {
   try {
+    const companyId = req.user.companyId;
     const { id } = req.params;
 
-    const lead = await leadRepository.findById(id);
-    if (!lead) {
-      return res.status(404).json({ message: 'Lead not found' });
-    }
+    const lead = await leadRepository.findById(companyId, id);
+    if (!lead) return res.status(404).json({ message: 'Lead not found' });
 
     if (lead.status === 'converted') {
       return res.status(409).json({ message: 'Lead already converted to customer' });
     }
 
     if (lead.document) {
-      const existing = await customerRepository.findByDocument(lead.document);
+      const existing = await customerRepository.findByDocument(companyId, lead.document);
       if (existing) {
         return res.status(409).json({ message: 'A customer with this document already exists' });
       }
     }
 
     const customer = await customerRepository.create({
+      companyId,
       name: lead.name,
       phone: lead.phone,
       email: lead.email,
@@ -113,7 +112,7 @@ export const convertToCustomer = async (req, res) => {
       leadId: lead._id
     });
 
-    await leadRepository.convertToCustomer(id, customer._id);
+    await leadRepository.convertToCustomer(companyId, id, customer._id);
 
     return res.status(201).json({ customer, message: 'Lead successfully converted to customer' });
   } catch (err) {
@@ -124,12 +123,11 @@ export const convertToCustomer = async (req, res) => {
 
 export const destroy = async (req, res) => {
   try {
+    const companyId = req.user.companyId;
     const { id } = req.params;
 
-    const lead = await leadRepository.softDelete(id);
-    if (!lead) {
-      return res.status(404).json({ message: 'Lead not found' });
-    }
+    const lead = await leadRepository.softDelete(companyId, id);
+    if (!lead) return res.status(404).json({ message: 'Lead not found' });
 
     return res.status(200).json({ message: 'Lead deleted successfully' });
   } catch (err) {

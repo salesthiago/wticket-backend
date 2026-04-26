@@ -1,18 +1,20 @@
 import { Router } from 'express';
-import { authenticate } from '../middleware/auth.middleware.js';
+import { authenticate, requireTenant, requireModule } from '../middleware/auth.middleware.js';
 import * as serviceOrderController from '../controller/service-order.controller.js';
 
 const router = Router();
 
-router.get('/', authenticate, serviceOrderController.findAll);
-router.get('/dashboard', authenticate, serviceOrderController.dashboard);
-router.get('/number/:orderNumber', authenticate, serviceOrderController.findByOrderNumber);
-router.get('/customer/:customerId', authenticate, serviceOrderController.findByCustomer);
-router.get('/:id', authenticate, serviceOrderController.findById);
-router.post('/', authenticate, serviceOrderController.create);
-router.put('/:id', authenticate, serviceOrderController.update);
-router.patch('/:id/status', authenticate, serviceOrderController.updateStatus);
-router.patch('/:id/diagnosis', authenticate, serviceOrderController.addDiagnosis);
-router.delete('/:id/destroy', authenticate, serviceOrderController.destroy);
+router.use(authenticate, requireTenant, requireModule('service_order'));
+
+router.get('/', serviceOrderController.findAll);
+router.get('/dashboard', serviceOrderController.dashboard);
+router.get('/number/:orderNumber', serviceOrderController.findByOrderNumber);
+router.get('/customer/:customerId', serviceOrderController.findByCustomer);
+router.get('/:id', serviceOrderController.findById);
+router.post('/', serviceOrderController.create);
+router.put('/:id', serviceOrderController.update);
+router.patch('/:id/status', serviceOrderController.updateStatus);
+router.patch('/:id/diagnosis', serviceOrderController.addDiagnosis);
+router.delete('/:id/destroy', serviceOrderController.destroy);
 
 export default router;

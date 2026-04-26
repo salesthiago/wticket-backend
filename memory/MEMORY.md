@@ -1,0 +1,2 @@
+- [User role and identity](user_role.md) — sales.go@gmail.com is the super-admin/owner of wticket
+- [Multi-tenant architecture (Company/Module)](project_multitenant_architecture.md) — how Company tenancy + Module gating works in wticket

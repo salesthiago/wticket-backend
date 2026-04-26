@@ -1,28 +1,23 @@
 import { Router } from 'express';
-import { authenticate } from '../middleware/auth.middleware.js';
+import { authenticate, requireTenant, requireModule } from '../middleware/auth.middleware.js';
 import * as ctrl from '../controller/ai-agent.controller.js';
 
 const router = Router();
 
-// ─── Agentes CRUD ────────────────────────────────────────────────────────────
-router.get('/', authenticate, ctrl.listAgents);
-router.post('/', authenticate, ctrl.createAgent);
-router.get('/:id', authenticate, ctrl.getAgent);
-router.put('/:id', authenticate, ctrl.updateAgent);
-router.delete('/:id', authenticate, ctrl.deleteAgent);
+router.use(authenticate, requireTenant, requireModule('auto_attendance'));
 
-// ─── Chat (atendimento / vendas) ──────────────────────────────────────────────
-router.post('/:id/chat', authenticate, ctrl.sendMessage);
+router.get('/', ctrl.listAgents);
+router.post('/', ctrl.createAgent);
+router.get('/:id', ctrl.getAgent);
+router.put('/:id', ctrl.updateAgent);
+router.delete('/:id', ctrl.deleteAgent);
 
-// ─── Análise de Lead ─────────────────────────────────────────────────────────
-router.post('/:id/analyze-lead', authenticate, ctrl.analyzeLead);
+router.post('/:id/chat', ctrl.sendMessage);
+router.post('/:id/analyze-lead', ctrl.analyzeLead);
+router.post('/:id/generate-campaign', ctrl.generateCampaign);
 
-// ─── Geração de Campanha ──────────────────────────────────────────────────────
-router.post('/:id/generate-campaign', authenticate, ctrl.generateCampaign);
-
-// ─── Conversas ───────────────────────────────────────────────────────────────
-router.get('/:id/conversations', authenticate, ctrl.listConversations);
-router.get('/:id/conversations/:convId', authenticate, ctrl.getConversation);
-router.delete('/:id/conversations/:convId', authenticate, ctrl.deleteConversation);
+router.get('/:id/conversations', ctrl.listConversations);
+router.get('/:id/conversations/:convId', ctrl.getConversation);
+router.delete('/:id/conversations/:convId', ctrl.deleteConversation);
 
 export default router;
