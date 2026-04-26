@@ -2,22 +2,31 @@
 import User from '../models/user.model.js';
 import logger from '../utils/logger.js';
 import { diacriticSensitiveRegex } from '../utils/formatter.js';
-import userRepository from '../repositories/user.repository.js'
+import userRepository from '../repositories/user.repository.js';
+
+const isSuperAdmin = (req) => req.user?.role === 'super_admin';
 
 export const findAll = async (req, res) => {
   try {
     const { search } = req.query;
     const page = (req?.page - 1) || 0;
     const rowsPerPage = req?.perPage || 10;
-    
-    const query = {}
+
+    const query = {};
     if (search) {
-        query.name = {
-            $regex: diacriticSensitiveRegex(search),
-            $options: "i",
-        }
+      query.name = {
+        $regex: diacriticSensitiveRegex(search),
+        $options: "i",
+      };
     }
-    const users = await userRepository.findAll({ query, page, rowsPerPage })
+
+    // super_admin sees all users; everyone else only their company
+    const companyId = isSuperAdmin(req) ? undefined : req.user.companyId;
+    if (!isSuperAdmin(req) && !companyId) {
+      return res.status(403).json({ message: 'Tenant access required' });
+    }
+
+    const users = await userRepository.findAll({ query, page, rowsPerPage, companyId });
 
     return res.status(200).json(users);
   } catch (err) {
@@ -31,44 +40,86 @@ export const create = async (req, res) => {
     const { name, email, password, status, role } = req.body;
     if (!email || !password) return res.status(400).json({ message: 'email and password required' });
 
-    const user = await User.findOne({ email });
-    if (user) return res.status(422).json({ message: 'Invalid Email!' });
+    const existing = await User.findOne({ email });
+    if (existing) return res.status(422).json({ message: 'Invalid Email!' });
 
-    const userCreated = await userRepository.create(req.body);
+    // Force user to be created within the requester's company (unless super_admin)
+    const companyId = isSuperAdmin(req)
+      ? (req.body.companyId || null)
+      : req.user.companyId;
+
+    if (!isSuperAdmin(req) && !companyId) {
+      return res.status(403).json({ message: 'Tenant access required' });
+    }
+
+    // Block non-super-admins from creating super_admin or company_admin via this route
+    let safeRole = role || 'default';
+    if (!isSuperAdmin(req)) {
+      if (safeRole === 'super_admin') {
+        return res.status(403).json({ message: 'Cannot create super_admin' });
+      }
+      if (safeRole === 'company_admin' && req.user.role !== 'company_admin') {
+        return res.status(403).json({ message: 'Only company_admin can create another company_admin' });
+      }
+    }
+
+    const userCreated = await userRepository.create({
+      name,
+      email,
+      password,
+      status,
+      role: safeRole,
+      companyId
+    });
     return res.status(200).json(userCreated);
   } catch (err) {
-    logger.error('Update Create error', err);
+    logger.error('Create user error', err);
     return res.status(500).json({ message: 'Internal server error' });
   }
 };
 
 export const update = async (req, res) => {
   try {
-    const { id } = req.params
-    if (!id) {
-      return res.status(422).json({ message: 'ID not founded' }, req);  
-    }
-    const { name, email, password, status, role } = req.body;
+    const { id } = req.params;
+    if (!id) return res.status(422).json({ message: 'ID not founded' });
+
+    const { name, email } = req.body;
     if (!email || !name) return res.status(400).json({ message: 'email and name is required' });
 
-    const user = await User.findById(id);
-    if (!user) return res.status(404).json({ message: 'the User not founded!' });
+    const companyId = isSuperAdmin(req) ? undefined : req.user.companyId;
+    if (!isSuperAdmin(req) && !companyId) {
+      return res.status(403).json({ message: 'Tenant access required' });
+    }
 
-    const updated = await userRepository.update(id, req.body)
+    const user = await userRepository.findById(id, { companyId });
+    if (!user) return res.status(404).json({ message: 'User not founded!' });
+
+    // Non-super-admins cannot escalate role
+    const patch = { ...req.body };
+    if (!isSuperAdmin(req)) {
+      delete patch.role;
+      delete patch.companyId;
+    }
+
+    const updated = await userRepository.update(id, patch, { companyId });
     return res.json(updated);
   } catch (err) {
     logger.error('update User error', err);
     return res.status(500).json({ message: 'Internal server error' });
   }
-}
+};
 
-  export const findById = async (req, res) => {
+export const findById = async (req, res) => {
   try {
-    const { id } = req.params
-    if (!id) {
-      return res.status(422).json({ message: 'ID not founded' }, req);
+    const { id } = req.params;
+    if (!id) return res.status(422).json({ message: 'ID not founded' });
+
+    const companyId = isSuperAdmin(req) ? undefined : req.user.companyId;
+    if (!isSuperAdmin(req) && !companyId) {
+      return res.status(403).json({ message: 'Tenant access required' });
     }
-    const user = await userRepository.findById(id);
+
+    const user = await userRepository.findById(id, { companyId });
     if (!user) return res.status(404).json({ message: 'User not founded!' });
 
     return res.json(user);
@@ -80,14 +131,18 @@ export const update = async (req, res) => {
 
 export const destroy = async (req, res) => {
   try {
-    const { id } = req.params
-    if (!id) {
-      return res.status(422).json({ message: 'ID not founded' }, req);
+    const { id } = req.params;
+    if (!id) return res.status(422).json({ message: 'ID not founded' });
+
+    const companyId = isSuperAdmin(req) ? undefined : req.user.companyId;
+    if (!isSuperAdmin(req) && !companyId) {
+      return res.status(403).json({ message: 'Tenant access required' });
     }
 
-    await userRepository.destroy(id);
+    const deleted = await userRepository.destroy(id, { companyId });
+    if (!deleted) return res.status(404).json({ message: 'User not found' });
 
-    return res.status(201).json({ message: 'Deleted with successfully' });
+    return res.status(200).json({ message: 'Deleted with successfully' });
   } catch (err) {
     logger.error('destroy User error', err);
     return res.status(500).json({ message: 'Internal server error' });

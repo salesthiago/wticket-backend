@@ -3,18 +3,20 @@ import logger from '../utils/logger.js';
 
 class ServiceOrderRepository {
   async create(data) {
+    if (!data.companyId) throw new Error('companyId is required');
     try {
       const serviceOrder = new ServiceOrder(data);
       return await serviceOrder.save();
     } catch (error) {
       logger.error('ServiceOrderRepository :: create >> ', error);
-      throw new Error(error.message);
+      throw error;
     }
   }
 
-  async findAll({ search, status, priority, technicianId, customerId, page = 0, limit = 10 } = {}) {
+  async findAll(companyId, { search, status, priority, technicianId, customerId, page = 0, limit = 10 } = {}) {
+    if (!companyId) throw new Error('companyId is required');
     try {
-      const query = { isActive: true };
+      const query = { companyId, isActive: true };
 
       if (status) query.status = status;
       if (priority) query.priority = priority;
@@ -47,95 +49,69 @@ class ServiceOrderRepository {
       return { records, total, page, limit };
     } catch (error) {
       logger.error('ServiceOrderRepository :: findAll >> ', error);
-      throw new Error(error.message);
+      throw error;
     }
   }
 
-  async findById(id) {
-    try {
-      return await ServiceOrder.findOne({ _id: id, isActive: true })
-        .populate('customerId', 'name phone email document address')
-        .populate('technicianId', 'name email')
-        .populate('statusHistory.changedBy', 'name');
-    } catch (error) {
-      logger.error('ServiceOrderRepository :: findById >> ', error);
-      throw new Error(error.message);
-    }
+  async findById(companyId, id) {
+    if (!companyId) throw new Error('companyId is required');
+    return await ServiceOrder.findOne({ _id: id, companyId, isActive: true })
+      .populate('customerId', 'name phone email document address')
+      .populate('technicianId', 'name email')
+      .populate('statusHistory.changedBy', 'name');
   }
 
-  async findByOrderNumber(orderNumber) {
-    try {
-      return await ServiceOrder.findOne({ orderNumber, isActive: true })
-        .populate('customerId', 'name phone email document address')
-        .populate('technicianId', 'name email');
-    } catch (error) {
-      logger.error('ServiceOrderRepository :: findByOrderNumber >> ', error);
-      throw new Error(error.message);
-    }
+  async findByOrderNumber(companyId, orderNumber) {
+    if (!companyId) throw new Error('companyId is required');
+    return await ServiceOrder.findOne({ companyId, orderNumber, isActive: true })
+      .populate('customerId', 'name phone email document address')
+      .populate('technicianId', 'name email');
   }
 
-  async findByCustomer(customerId) {
-    try {
-      return await ServiceOrder.find({ customerId, isActive: true })
-        .populate('technicianId', 'name email')
-        .sort({ createdAt: -1 });
-    } catch (error) {
-      logger.error('ServiceOrderRepository :: findByCustomer >> ', error);
-      throw new Error(error.message);
-    }
+  async findByCustomer(companyId, customerId) {
+    if (!companyId) throw new Error('companyId is required');
+    return await ServiceOrder.find({ companyId, customerId, isActive: true })
+      .populate('technicianId', 'name email')
+      .sort({ createdAt: -1 });
   }
 
-  async update(id, data) {
-    try {
-      return await ServiceOrder.findOneAndUpdate(
-        { _id: id, isActive: true },
-        { $set: data },
-        { new: true }
-      )
-        .populate('customerId', 'name phone email document address')
-        .populate('technicianId', 'name email');
-    } catch (error) {
-      logger.error('ServiceOrderRepository :: update >> ', error);
-      throw new Error(error.message);
-    }
+  async update(companyId, id, data) {
+    if (!companyId) throw new Error('companyId is required');
+    const patch = { ...data };
+    delete patch.companyId;
+    return await ServiceOrder.findOneAndUpdate(
+      { _id: id, companyId, isActive: true },
+      { $set: patch },
+      { new: true }
+    )
+      .populate('customerId', 'name phone email document address')
+      .populate('technicianId', 'name email');
   }
 
-  async addStatusHistory(id, statusEntry) {
-    try {
-      return await ServiceOrder.findOneAndUpdate(
-        { _id: id, isActive: true },
-        { $push: { statusHistory: statusEntry } },
-        { new: true }
-      );
-    } catch (error) {
-      logger.error('ServiceOrderRepository :: addStatusHistory >> ', error);
-      throw new Error(error.message);
-    }
+  async addStatusHistory(companyId, id, statusEntry) {
+    if (!companyId) throw new Error('companyId is required');
+    return await ServiceOrder.findOneAndUpdate(
+      { _id: id, companyId, isActive: true },
+      { $push: { statusHistory: statusEntry } },
+      { new: true }
+    );
   }
 
-  async softDelete(id) {
-    try {
-      return await ServiceOrder.findOneAndUpdate(
-        { _id: id, isActive: true },
-        { $set: { isActive: false, deletedAt: new Date() } },
-        { new: true }
-      );
-    } catch (error) {
-      logger.error('ServiceOrderRepository :: softDelete >> ', error);
-      throw new Error(error.message);
-    }
+  async softDelete(companyId, id) {
+    if (!companyId) throw new Error('companyId is required');
+    return await ServiceOrder.findOneAndUpdate(
+      { _id: id, companyId, isActive: true },
+      { $set: { isActive: false, deletedAt: new Date() } },
+      { new: true }
+    );
   }
 
-  async countByStatus() {
-    try {
-      return await ServiceOrder.aggregate([
-        { $match: { isActive: true } },
-        { $group: { _id: '$status', count: { $sum: 1 } } }
-      ]);
-    } catch (error) {
-      logger.error('ServiceOrderRepository :: countByStatus >> ', error);
-      throw new Error(error.message);
-    }
+  async countByStatus(companyId) {
+    if (!companyId) throw new Error('companyId is required');
+    return await ServiceOrder.aggregate([
+      { $match: { companyId, isActive: true } },
+      { $group: { _id: '$status', count: { $sum: 1 } } }
+    ]);
   }
 }
 

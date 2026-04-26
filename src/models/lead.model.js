@@ -12,6 +12,12 @@ const AddressSchema = new mongoose.Schema({
 }, { _id: false });
 
 const LeadSchema = new mongoose.Schema({
+  // TODO: make required after AI/lead extraction services are tenant-aware
+  companyId: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'Company',
+    index: true
+  },
   name: {
     type: String,
     required: true,
@@ -75,6 +81,6 @@ const LeadSchema = new mongoose.Schema({
   timestamps: true
 });
 
-LeadSchema.index({ isActive: 1, status: 1, createdAt: -1 });
+LeadSchema.index({ companyId: 1, isActive: 1, status: 1, createdAt: -1 });
 
 export default mongoose.model('Lead', LeadSchema);

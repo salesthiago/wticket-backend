@@ -1,20 +1,21 @@
 import logger from "../utils/logger.js";
-import { diacriticSensitiveRegex, onlyNumbers } from "../utils/formatter.js";
 import ticketRepository from "../repositories/ticket.repository.js";
 
 export const findAll = async (req, res) => {
   try {
+    const companyId = req.user.companyId;
     const { session, category } = req.query;
-    const tickets = await ticketRepository.findAll(session, category);
+    const tickets = await ticketRepository.findAll(session, category, { companyId });
     return res.status(200).json(tickets);
   } catch (err) {
-    logger.error("contact FindALL error >>> ", err);
+    logger.error("ticket FindALL error >>> ", err);
     res.status(500).json({ message: "Internal server error" });
   }
 };
 
 export const updateSaleItems = async (req, res) => {
   try {
+    const companyId = req.user.companyId;
     const { id } = req.params;
     const { saleItems, category } = req.body;
     if (!id) return res.status(422).json({ message: 'ID not found' });
@@ -23,7 +24,7 @@ export const updateSaleItems = async (req, res) => {
     if (saleItems !== undefined) data.saleItems = saleItems;
     if (category !== undefined) data.category = category;
 
-    const updated = await ticketRepository.update(id, data);
+    const updated = await ticketRepository.update(id, data, { companyId });
     return res.status(200).json(updated);
   } catch (err) {
     logger.error('updateSaleItems error >>> ', err);
@@ -31,76 +32,67 @@ export const updateSaleItems = async (req, res) => {
   }
 };
 
-
 export const findById = async (req, res) => {
   try {
+    const companyId = req.user.companyId;
     const { id } = req.params;
-    if (!id) {
-      return res.status(422).json({ message: "ID not founded" }, req);
-    }
-    const ticket = await ticketRepository.findById(id);
-    if (!ticket)
-      return res.status(404).json({ message: "Ticket not founded!" });
+    if (!id) return res.status(422).json({ message: "ID not founded" });
+
+    const ticket = await ticketRepository.findById(id, { companyId });
+    if (!ticket) return res.status(404).json({ message: "Ticket not founded!" });
 
     return res.status(200).json(ticket);
   } catch (err) {
-    logger.error("Login error", err);
+    logger.error("ticket findById error", err);
     return res.status(500).json({ message: "Internal server error" });
   }
 };
 
 export const updateStatus = async (req, res) => {
   try {
+    const companyId = req.user.companyId;
     const { id, status } = req.params;
-    if (!id) {
-      return res.status(422).json({ message: "ID not founded" }, req);
-    }
-    if (!status) {
-      return res.status(422).json({ message: "status not founded" }, req);
-    }
-    
-    await ticketRepository.updateStatus(id, status);
-   
-    return res.status(201).json({ message: 'ticket deleted by successfully '});
+    if (!id) return res.status(422).json({ message: "ID not founded" });
+    if (!status) return res.status(422).json({ message: "status not founded" });
+
+    await ticketRepository.updateStatus(id, status, {}, { companyId });
+
+    return res.status(201).json({ message: 'ticket updated successfully' });
   } catch (err) {
-    logger.error("destroy error", err);
+    logger.error("ticket updateStatus error", err);
     return res.status(500).json({ message: "Internal server error" });
   }
 };
 
 export const update = async (req, res) => {
   try {
+    const companyId = req.user.companyId;
     const { id } = req.params;
-    const { body } = req
-    if (!id) {
-      return res.status(422).json({ message: "ID not founded" }, req);
-    }
-    if (!body) {
-      return res.status(422).json({ message: "The body is empty" }, req);
-    }
+    const { body } = req;
+    if (!id) return res.status(422).json({ message: "ID not founded" });
+    if (!body) return res.status(422).json({ message: "The body is empty" });
 
-    const updated = await ticketRepository.update(id, body);
-   
+    const updated = await ticketRepository.update(id, body, { companyId });
+
     return res.status(200).json(updated);
   } catch (err) {
-    logger.error("destroy error", err);
+    logger.error("ticket update error", err);
     return res.status(500).json({ message: "Internal server error" });
   }
 };
 
 export const destroy = async (req, res) => {
   try {
+    const companyId = req.user.companyId;
     const { id } = req.params;
-    if (!id) {
-      return res.status(422).json({ message: "ID not founded" }, req);
-    }
-    const ticket = await ticketRepository.deleteTicket(id);
-    if (!ticket)
-      return res.status(404).json({ message: "Ticket not founded!" });
-  
-    return res.status(201).json({ message: 'ticket deleted by successfully '});
+    if (!id) return res.status(422).json({ message: "ID not founded" });
+
+    const ticket = await ticketRepository.deleteTicket(id, { companyId });
+    if (!ticket) return res.status(404).json({ message: "Ticket not founded!" });
+
+    return res.status(201).json({ message: 'ticket deleted successfully' });
   } catch (err) {
-    logger.error("destroy error", err);
+    logger.error("ticket destroy error", err);
     return res.status(500).json({ message: "Internal server error" });
   }
 };

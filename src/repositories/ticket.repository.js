@@ -1,6 +1,9 @@
 import Ticket from '../models/ticket.model.js';
 import logger from '../utils/logger.js';
 
+// Note: companyId is optional in many methods because the message-processor
+// service still creates/updates tickets without tenant context.
+// TODO: make services tenant-aware and tighten these signatures.
 class TicketRepository {
   async create(ticketData) {
     try {
@@ -11,9 +14,11 @@ class TicketRepository {
     }
   }
 
-  async findById(id) {
+  async findById(id, { companyId } = {}) {
     try {
-      return await Ticket.findById(id)
+      const query = { _id: id };
+      if (companyId) query.companyId = companyId;
+      return await Ticket.findOne(query)
         .populate('assignedTo', 'name email')
         .populate('messages');
     } catch (error) {
@@ -21,13 +26,15 @@ class TicketRepository {
     }
   }
 
-  async findByContact(sessionName, contactNumber) {
+  async findByContact(sessionName, contactNumber, { companyId } = {}) {
     try {
-        return await Ticket.findOne({
-        sessionName: sessionName,
-        contactNumber: contactNumber,
+      const query = {
+        sessionName,
+        contactNumber,
         status: { $in: ['opened', 'in_progress', 'paused'] }
-      }).sort({ createdAt: -1 });
+      };
+      if (companyId) query.companyId = companyId;
+      return await Ticket.findOne(query).sort({ createdAt: -1 });
     } catch (error) {
       throw new Error(error.message);
     }
@@ -35,12 +42,14 @@ class TicketRepository {
 
   async updateOrCreate(sessionName, contactNumber, updateData) {
     try {
+      const filter = {
+        sessionName,
+        contactNumber,
+        status: { $ne: 'closed' }
+      };
+      if (updateData.companyId) filter.companyId = updateData.companyId;
       return await Ticket.findOneAndUpdate(
-        {
-          sessionName: sessionName,
-          contactNumber: contactNumber,
-          status: { $ne: 'closed' }
-        },
+        filter,
         updateData,
         { upsert: true, new: true }
       );
@@ -49,11 +58,12 @@ class TicketRepository {
     }
   }
 
-  async findAll(sessionName = null, category = null) {
+  async findAll(sessionName = null, category = null, { companyId } = {}) {
     try {
       const query = {};
       if (sessionName) query.sessionName = sessionName;
       if (category) query.category = category;
+      if (companyId) query.companyId = companyId;
       return await Ticket.find(query)
         .populate('saleItems.product', 'name price sku')
         .sort({ lastMessage: -1 })
@@ -63,10 +73,26 @@ class TicketRepository {
     }
   }
 
-  async updateStatus(id, status, additionalData = {}) {
+  async update(id, data, { companyId } = {}) {
+    try {
+      const filter = { _id: id };
+      if (companyId) filter.companyId = companyId;
+      const patch = { ...data };
+      delete patch.companyId;
+      return await Ticket.findOneAndUpdate(
+        filter,
+        { $set: patch },
+        { new: true }
+      );
+    } catch (error) {
+      throw new Error(error.message);
+    }
+  }
+
+  async updateStatus(id, status, additionalData = {}, { companyId } = {}) {
     try {
       const updateData = { status, ...additionalData };
-      
+
       if (status === 'finished' || status === 'canceled') {
         updateData.closedAt = new Date();
       }
@@ -74,8 +100,10 @@ class TicketRepository {
         updateData.resolvedAt = new Date();
       }
 
-      return await Ticket.findByIdAndUpdate(
-        id,
+      const filter = { _id: id };
+      if (companyId) filter.companyId = companyId;
+      return await Ticket.findOneAndUpdate(
+        filter,
         { $set: updateData },
         { new: true }
       ).populate('assignedTo', 'name email');
@@ -84,12 +112,14 @@ class TicketRepository {
     }
   }
 
-  async assignTicket(id, userId) {
+  async assignTicket(id, userId, { companyId } = {}) {
     try {
-      return await Ticket.findByIdAndUpdate(
-        id,
-        { 
-          $set: { 
+      const filter = { _id: id };
+      if (companyId) filter.companyId = companyId;
+      return await Ticket.findOneAndUpdate(
+        filter,
+        {
+          $set: {
             assignedTo: userId,
             status: 'in_progress'
           }
@@ -97,7 +127,7 @@ class TicketRepository {
         { new: true }
       ).populate('assignedTo', 'name email');
     } catch (error) {
-      throw new Error('Erro ao atribuir ticket: '+ error.message);
+      throw new Error('Erro ao atribuir ticket: ' + error.message);
     }
   }
 
@@ -105,27 +135,24 @@ class TicketRepository {
     try {
       return await Ticket.findByIdAndUpdate(
         ticketId,
-        { 
+        {
           $push: { messages: messageId },
           $set: { lastMessage: new Date() }
         },
         { new: true }
       );
     } catch (error) {
-      throw new Error('Erro ao adicionar mensagem: '+ error.message);
+      throw new Error('Erro ao adicionar mensagem: ' + error.message);
     }
   }
 
-  async getTicketsStats(sessionName) {
+  async getTicketsStats(sessionName, { companyId } = {}) {
     try {
+      const match = { sessionName };
+      if (companyId) match.companyId = companyId;
       return await Ticket.aggregate([
-        { $match: { sessionName } },
-        {
-          $group: {
-            _id: '$status',
-            count: { $sum: 1 }
-          }
-        }
+        { $match: match },
+        { $group: { _id: '$status', count: { $sum: 1 } } }
       ]);
     } catch (error) {
       logger.error('Erro ao obter estatísticas: ', error.message);
@@ -133,12 +160,14 @@ class TicketRepository {
     }
   }
 
-  async deleteTicket(id) {
+  async deleteTicket(id, { companyId } = {}) {
     try {
-      return await Ticket.findByIdAndDelete(id);
+      const filter = { _id: id };
+      if (companyId) filter.companyId = companyId;
+      return await Ticket.findOneAndDelete(filter);
     } catch (error) {
       logger.error('Erro ao deletar: ', error);
-      throw new Error('Erro ao deletar ticket: '+ error.message);
+      throw new Error('Erro ao deletar ticket: ' + error.message);
     }
   }
 
@@ -230,7 +259,7 @@ class TicketRepository {
       };
 
     } catch (error) {
-      logger.error('Repository - dashboard Error : ', error)
+      logger.error('Repository - dashboard Error : ', error);
       throw new Error('Repository - Dashboard Error:' + error.message);
     }
   }
@@ -302,8 +331,8 @@ class TicketRepository {
 
       return timeAnalysis[0];
     } catch (error) {
-      logger.error('Repository :: dashboardWithTimeAnalysis >>>>> ', error)
-      throw new Error('Repository - Time Analysis Error: '+ error.message);
+      logger.error('Repository :: dashboardWithTimeAnalysis >>>>> ', error);
+      throw new Error('Repository - Time Analysis Error: ' + error.message);
     }
   }
 }

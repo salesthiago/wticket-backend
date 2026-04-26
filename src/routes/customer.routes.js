@@ -1,13 +1,15 @@
 import { Router } from 'express';
-import { authenticate } from '../middleware/auth.middleware.js';
+import { authenticate, requireTenant, requireModule } from '../middleware/auth.middleware.js';
 import * as customerController from '../controller/customer.controller.js';
 
 const router = Router();
 
-router.get('/', authenticate, customerController.findAll);
-router.post('/', authenticate, customerController.create);
-router.get('/:id', authenticate, customerController.findById);
-router.put('/:id', authenticate, customerController.update);
-router.delete('/:id/destroy', authenticate, customerController.destroy);
+router.use(authenticate, requireTenant, requireModule('service_order'));
+
+router.get('/', customerController.findAll);
+router.post('/', customerController.create);
+router.get('/:id', customerController.findById);
+router.put('/:id', customerController.update);
+router.delete('/:id/destroy', customerController.destroy);
 
 export default router;

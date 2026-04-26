@@ -1,5 +1,7 @@
 import Message from '../models/message.model.js';
 
+// Messages are mostly created by services (whatsapp ingestion), so companyId
+// is optional here. TODO: enforce after services are tenant-aware.
 class MessageRepository {
   async create(messageData) {
     try {
@@ -10,18 +12,21 @@ class MessageRepository {
     }
   }
 
-  async findByTicket(ticketId, filters = {}) {
+  async findByTicket(ticketId, filters = {}, { companyId } = {}) {
     try {
       const query = { ticketId, ...filters };
+      if (companyId) query.companyId = companyId;
       return await Message.find(query).sort({ timestamp: 1 });
     } catch (error) {
       throw new Error(`Erro ao buscar mensagens: ${error.message}`);
     }
   }
 
-  async findByMessageId(messageId) {
+  async findByMessageId(messageId, { companyId } = {}) {
     try {
-      return await Message.findOne({ messageId });
+      const query = { messageId };
+      if (companyId) query.companyId = companyId;
+      return await Message.findOne(query);
     } catch (error) {
       throw new Error(`Erro ao buscar mensagem: ${error.message}`);
     }
@@ -39,9 +44,11 @@ class MessageRepository {
     }
   }
 
-  async getLastMessage(ticketId) {
+  async getLastMessage(ticketId, { companyId } = {}) {
     try {
-      return await Message.findOne({ ticketId })
+      const query = { ticketId };
+      if (companyId) query.companyId = companyId;
+      return await Message.findOne(query)
         .sort({ timestamp: -1 })
         .limit(1);
     } catch (error) {
@@ -49,9 +56,11 @@ class MessageRepository {
     }
   }
 
-  async deleteByTicket(ticketId) {
+  async deleteByTicket(ticketId, { companyId } = {}) {
     try {
-      return await Message.deleteMany({ ticketId });
+      const query = { ticketId };
+      if (companyId) query.companyId = companyId;
+      return await Message.deleteMany(query);
     } catch (error) {
       throw new Error(`Erro ao deletar mensagens: ${error.message}`);
     }

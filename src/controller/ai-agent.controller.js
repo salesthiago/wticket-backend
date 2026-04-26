@@ -7,8 +7,9 @@ import aiAgentService from '../services/ai-agent.service.js';
 
 export const listAgents = async (req, res) => {
   try {
+    const companyId = req.user.companyId;
     const { tipo, status } = req.query;
-    const filter = {};
+    const filter = { companyId };
     if (tipo) filter.tipo = tipo;
     if (status) filter.status = status;
 
@@ -22,7 +23,8 @@ export const listAgents = async (req, res) => {
 
 export const getAgent = async (req, res) => {
   try {
-    const agent = await AiAgent.findById(req.params.id);
+    const companyId = req.user.companyId;
+    const agent = await AiAgent.findOne({ _id: req.params.id, companyId });
     if (!agent) return res.status(404).json({ message: 'Agente não encontrado' });
     return res.status(200).json(agent);
   } catch (err) {
@@ -33,6 +35,7 @@ export const getAgent = async (req, res) => {
 
 export const createAgent = async (req, res) => {
   try {
+    const companyId = req.user.companyId;
     const { nome, descricao, tipo, tom, regras, dados_produto, status } = req.body;
 
     if (!nome || !tipo) {
@@ -40,6 +43,7 @@ export const createAgent = async (req, res) => {
     }
 
     const agent = await AiAgent.create({
+      companyId,
       nome,
       descricao,
       tipo,
@@ -58,10 +62,11 @@ export const createAgent = async (req, res) => {
 
 export const updateAgent = async (req, res) => {
   try {
+    const companyId = req.user.companyId;
     const { nome, descricao, tipo, tom, regras, dados_produto, status } = req.body;
 
-    const agent = await AiAgent.findByIdAndUpdate(
-      req.params.id,
+    const agent = await AiAgent.findOneAndUpdate(
+      { _id: req.params.id, companyId },
       { nome, descricao, tipo, tom, regras, dados_produto, status },
       { new: true, runValidators: true }
     );
@@ -76,9 +81,9 @@ export const updateAgent = async (req, res) => {
 
 export const deleteAgent = async (req, res) => {
   try {
-    const agent = await AiAgent.findByIdAndDelete(req.params.id);
+    const companyId = req.user.companyId;
+    const agent = await AiAgent.findOneAndDelete({ _id: req.params.id, companyId });
     if (!agent) return res.status(404).json({ message: 'Agente não encontrado' });
-    // Remove conversas associadas
     await AiConversation.deleteMany({ agentId: req.params.id });
     return res.status(204).send();
   } catch (err) {
@@ -89,11 +94,20 @@ export const deleteAgent = async (req, res) => {
 
 // ─── Chat ────────────────────────────────────────────────────────────────────
 
+const ensureAgentBelongsToCompany = async (agentId, companyId) => {
+  const agent = await AiAgent.findOne({ _id: agentId, companyId });
+  return !!agent;
+};
+
 export const sendMessage = async (req, res) => {
   try {
+    const companyId = req.user.companyId;
     const { message, conversationId } = req.body;
 
     if (!message) return res.status(400).json({ message: 'Mensagem é obrigatória' });
+
+    const ok = await ensureAgentBelongsToCompany(req.params.id, companyId);
+    if (!ok) return res.status(404).json({ message: 'Agente não encontrado' });
 
     const result = await aiAgentService.sendMessage(req.params.id, message, conversationId);
     return res.status(200).json(result);
@@ -106,13 +120,15 @@ export const sendMessage = async (req, res) => {
   }
 };
 
-// ─── Análise de Lead ─────────────────────────────────────────────────────────
-
 export const analyzeLead = async (req, res) => {
   try {
+    const companyId = req.user.companyId;
     const { leadData } = req.body;
 
     if (!leadData) return res.status(400).json({ message: 'Dados do lead são obrigatórios' });
+
+    const ok = await ensureAgentBelongsToCompany(req.params.id, companyId);
+    if (!ok) return res.status(404).json({ message: 'Agente não encontrado' });
 
     const result = await aiAgentService.analyzeLead(req.params.id, leadData);
     return res.status(200).json(result);
@@ -124,14 +140,16 @@ export const analyzeLead = async (req, res) => {
   }
 };
 
-// ─── Geração de Campanha ──────────────────────────────────────────────────────
-
 export const generateCampaign = async (req, res) => {
   try {
+    const companyId = req.user.companyId;
     const params = req.body;
     if (!params || Object.keys(params).length === 0) {
       return res.status(400).json({ message: 'Parâmetros da campanha são obrigatórios' });
     }
+
+    const ok = await ensureAgentBelongsToCompany(req.params.id, companyId);
+    if (!ok) return res.status(404).json({ message: 'Agente não encontrado' });
 
     const result = await aiAgentService.generateCampaign(req.params.id, params);
     return res.status(200).json(result);
@@ -147,6 +165,10 @@ export const generateCampaign = async (req, res) => {
 
 export const listConversations = async (req, res) => {
   try {
+    const companyId = req.user.companyId;
+    const ok = await ensureAgentBelongsToCompany(req.params.id, companyId);
+    if (!ok) return res.status(404).json({ message: 'Agente não encontrado' });
+
     const conversations = await AiConversation.find({ agentId: req.params.id })
       .select('titulo messages createdAt updatedAt contactPhone')
       .sort({ updatedAt: -1 })
@@ -160,6 +182,10 @@ export const listConversations = async (req, res) => {
 
 export const getConversation = async (req, res) => {
   try {
+    const companyId = req.user.companyId;
+    const ok = await ensureAgentBelongsToCompany(req.params.id, companyId);
+    if (!ok) return res.status(404).json({ message: 'Agente não encontrado' });
+
     const conversation = await AiConversation.findOne({
       _id: req.params.convId,
       agentId: req.params.id
@@ -174,6 +200,10 @@ export const getConversation = async (req, res) => {
 
 export const deleteConversation = async (req, res) => {
   try {
+    const companyId = req.user.companyId;
+    const ok = await ensureAgentBelongsToCompany(req.params.id, companyId);
+    if (!ok) return res.status(404).json({ message: 'Agente não encontrado' });
+
     const conversation = await AiConversation.findOneAndDelete({
       _id: req.params.convId,
       agentId: req.params.id

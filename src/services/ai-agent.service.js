@@ -12,25 +12,10 @@ class AiAgentService {
       const s = await aiProvidersService.getProvider(p);
       if (s?.value?.token && s?.status === 'enabled') return p;
     }
-    // fallback: tenta o legado settings 'gemini'
-    const { default: Settings } = await import('../models/settings.model.js');
-    const legacy = await Settings.findOne({ name: 'gemini' });
-    if (legacy?.value?.token) return 'gemini_legacy';
     throw new Error('Nenhum provedor de IA configurado. Acesse IA > Configurar para adicionar uma chave de API.');
   }
 
   async callProvider(provider, message, systemPrompt) {
-    if (provider === 'gemini_legacy') {
-      // usa o serviço original de gemini (legado)
-      const { default: Settings } = await import('../models/settings.model.js');
-      const { GoogleGenerativeAI } = await import('@google/generative-ai');
-      const s = await Settings.findOne({ name: 'gemini' });
-      const genAI = new GoogleGenerativeAI(s.value.token);
-      const model = genAI.getGenerativeModel({ model: 'gemini-2.0-flash-exp' });
-      const prompt = systemPrompt ? `${systemPrompt}\n\n${message}` : message;
-      const result = await model.generateContent(prompt);
-      return result.response.text();
-    }
     const result = await aiProvidersService.send(provider, message, systemPrompt);
     return result.text;
   }

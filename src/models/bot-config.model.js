@@ -1,6 +1,12 @@
 import mongoose from 'mongoose';
 
 const botConfigSchema = new mongoose.Schema({
+  companyId: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'Company',
+    required: true,
+    index: true
+  },
   sessionId: {
     type: mongoose.Schema.Types.ObjectId,
     required: false,
@@ -12,8 +18,7 @@ const botConfigSchema = new mongoose.Schema({
   },
   name: {
     type: String,
-    required: true,
-    unique: true
+    required: true
   },
   description: {
     type: String,
@@ -100,9 +105,9 @@ botConfigSchema.virtual('autoResponses', {
   foreignField: 'botConfig'
 });
 
-botConfigSchema.index({ name: 1 }, { unique: true });
+botConfigSchema.index({ companyId: 1, name: 1 }, { unique: true });
 botConfigSchema.index({ enabled: 1 });
 botConfigSchema.index({ sessionId: 1, isActive: 1 });
-botConfigSchema.index({ triggerKeyword: 1 });
+botConfigSchema.index({ companyId: 1, triggerKeyword: 1 });
 
 export default mongoose.model('BotConfig', botConfigSchema);

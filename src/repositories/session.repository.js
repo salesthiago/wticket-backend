@@ -2,6 +2,7 @@ import Session from '../models/session.model.js';
 
 class SessionRepository {
   async create(sessionData) {
+    if (!sessionData.companyId) throw new Error('companyId is required');
     try {
       const session = new Session(sessionData);
       return await session.save();
@@ -10,27 +11,36 @@ class SessionRepository {
     }
   }
 
-  async findByName(name) {
+  // companyId optional here because wppconnect callbacks still
+  // look up sessions by name only. TODO: tenant-aware services.
+  async findByName(name, { companyId } = {}) {
     try {
-      return await Session.findOne({ name });
+      const query = { name };
+      if (companyId) query.companyId = companyId;
+      return await Session.findOne(query);
     } catch (error) {
       throw new Error(`Erro ao buscar sessão: ${error.message}`);
     }
   }
 
-  async findAll() {
+  async findAll({ companyId } = {}) {
     try {
-      return await Session.find({});
+      const query = companyId ? { companyId } : {};
+      return await Session.find(query);
     } catch (error) {
       throw new Error(`Erro ao buscar sessões: ${error.message}`);
     }
   }
 
-  async updateByName(name, updateData) {
+  async updateByName(name, updateData, { companyId } = {}) {
     try {
+      const filter = { name };
+      if (companyId) filter.companyId = companyId;
+      const patch = { ...updateData };
+      delete patch.companyId;
       return await Session.findOneAndUpdate(
-        { name },
-        { $set: updateData },
+        filter,
+        { $set: patch },
         { new: true, upsert: false }
       );
     } catch (error) {
@@ -40,8 +50,10 @@ class SessionRepository {
 
   async updateOrCreate(name, sessionData) {
     try {
+      const filter = { name };
+      if (sessionData.companyId) filter.companyId = sessionData.companyId;
       return await Session.findOneAndUpdate(
-        { name },
+        filter,
         { $set: sessionData },
         { new: true, upsert: true }
       );
@@ -50,27 +62,33 @@ class SessionRepository {
     }
   }
 
-  async deleteByName(name) {
+  async deleteByName(name, { companyId } = {}) {
     try {
-      return await Session.findOneAndDelete({ name });
+      const filter = { name };
+      if (companyId) filter.companyId = companyId;
+      return await Session.findOneAndDelete(filter);
     } catch (error) {
       throw new Error(`Erro ao deletar sessão: ${error.message}`);
     }
   }
 
-  async getProducts(name) {
+  async getProducts(name, { companyId } = {}) {
     try {
-      const session = await Session.findOne({ name }).populate('products');
+      const filter = { name };
+      if (companyId) filter.companyId = companyId;
+      const session = await Session.findOne(filter).populate('products');
       return session?.products || [];
     } catch (error) {
       throw new Error(`Erro ao buscar produtos da sessão: ${error.message}`);
     }
   }
 
-  async addProduct(name, productId) {
+  async addProduct(name, productId, { companyId } = {}) {
     try {
+      const filter = { name };
+      if (companyId) filter.companyId = companyId;
       return await Session.findOneAndUpdate(
-        { name },
+        filter,
         { $addToSet: { products: productId } },
         { new: true }
       ).populate('products');
@@ -79,10 +97,12 @@ class SessionRepository {
     }
   }
 
-  async removeProduct(name, productId) {
+  async removeProduct(name, productId, { companyId } = {}) {
     try {
+      const filter = { name };
+      if (companyId) filter.companyId = companyId;
       return await Session.findOneAndUpdate(
-        { name },
+        filter,
         { $pull: { products: productId } },
         { new: true }
       ).populate('products');
@@ -91,10 +111,12 @@ class SessionRepository {
     }
   }
 
-  async updateStatus(name, status) {
+  async updateStatus(name, status, { companyId } = {}) {
     try {
+      const filter = { name };
+      if (companyId) filter.companyId = companyId;
       return await Session.findOneAndUpdate(
-        { name },
+        filter,
         { $set: { status } },
         { new: true }
       );
@@ -103,10 +125,12 @@ class SessionRepository {
     }
   }
 
-  async updateNumber(name, number) {
+  async updateNumber(name, number, { companyId } = {}) {
     try {
+      const filter = { name };
+      if (companyId) filter.companyId = companyId;
       return await Session.findOneAndUpdate(
-        { name },
+        filter,
         { $set: { number } },
         { new: true }
       );
@@ -115,10 +139,12 @@ class SessionRepository {
     }
   }
 
-  async updateSource(name, source) {
+  async updateSource(name, source, { companyId } = {}) {
     try {
+      const filter = { name };
+      if (companyId) filter.companyId = companyId;
       return await Session.findOneAndUpdate(
-        { name },
+        filter,
         { $set: { source } },
         { new: true }
       );
