@@ -17,6 +17,8 @@ import aiProvidersRoutes from './ai-providers.routes.js'
 import serviceOrderRoutes from './service-order.routes.js'
 import companyRoutes from './company.routes.js'
 import moduleRoutes from './module.routes.js'
+import nfseRoutes from './nfse/index.js'
+import financialRoutes from './financial/index.js'
 import swaggerUi from 'swagger-ui-express'
 //import swaggerFile from './swagger.json'
 
@@ -39,6 +41,8 @@ router.use('/leads', leadRoutes);
 router.use('/ai-agents', aiAgentRoutes);
 router.use('/ai-providers', aiProvidersRoutes);
 router.use('/service-orders', serviceOrderRoutes);
+router.use('/nfse', nfseRoutes);
+router.use('/financial', financialRoutes);
 //router.use('/docs', swaggerUi.serve, swaggerUi.setup(swaggerFile));
 
 export default router

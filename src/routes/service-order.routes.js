@@ -15,6 +15,8 @@ router.post('/', serviceOrderController.create);
 router.put('/:id', serviceOrderController.update);
 router.patch('/:id/status', serviceOrderController.updateStatus);
 router.patch('/:id/diagnosis', serviceOrderController.addDiagnosis);
+router.post('/:id/invoice', serviceOrderController.invoice);
+router.get('/:id/receivables', serviceOrderController.listReceivables);
 router.delete('/:id/destroy', serviceOrderController.destroy);
 
 export default router;
