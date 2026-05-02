@@ -64,3 +64,12 @@ export const requireModule = (code) => (req, res, next) => {
   }
   next();
 };
+
+// Require the user to have one of the listed roles.
+// `super_admin` is implicitly allowed everywhere (platform owner).
+export const requireRole = (...allowedRoles) => (req, res, next) => {
+  const role = req.user?.role;
+  if (role === 'super_admin') return next();
+  if (allowedRoles.includes(role)) return next();
+  return res.status(403).json({ message: `Role '${role}' is not allowed for this resource` });
+};

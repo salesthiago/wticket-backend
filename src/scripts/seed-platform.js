@@ -40,6 +40,22 @@ const MODULES = [
     features: ['bot_config', 'ai_agents', 'ai_providers', 'auto_response'],
     price: 0,
     requires: ['attendance']
+  },
+  {
+    code: 'nfse',
+    name: 'NFS-e',
+    description: 'Emissão de Nota Fiscal de Serviço Eletrônica (Padrão Nacional ABRASF v1.01).',
+    features: ['nfse_config', 'nfse_certificate', 'nfse_service_codes', 'nfse_issuance', 'nfse_cancel'],
+    price: 0,
+    requires: []
+  },
+  {
+    code: 'financial',
+    name: 'Financeiro',
+    description: 'Contas a receber, faturamento de ordens de serviço e baixa de pagamentos.',
+    features: ['receivables', 'manual_entry', 'payment_registration', 'service_order_invoicing'],
+    price: 0,
+    requires: []
   }
 ];
 

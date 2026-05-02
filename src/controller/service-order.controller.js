@@ -1,6 +1,7 @@
 import logger from '../utils/logger.js';
 import serviceOrderRepository from '../repositories/service-order.repository.js';
 import customerRepository from '../repositories/customer.repository.js';
+import receivableService from '../services/financial/receivable.service.js';
 
 export const findAll = async (req, res) => {
   try {
@@ -229,6 +230,55 @@ export const dashboard = async (req, res) => {
     return res.status(200).json(summary);
   } catch (err) {
     logger.error('ServiceOrderController :: dashboard >> ', err);
+    return res.status(500).json({ message: 'Internal server error' });
+  }
+};
+
+// ─── Faturamento ──────────────────────────────────────────────────────────────
+
+export const invoice = async (req, res) => {
+  try {
+    const companyId = req.user.companyId;
+    const userId = req.user.sub;
+    const { id } = req.params;
+
+    // Bloqueio de role aqui também (controller é alcançado via rotas de service-orders,
+    // que não exigem role financeira). Permitimos administrator e finance.
+    const role = req.user.role;
+    if (!['super_admin', 'administrator', 'finance'].includes(role)) {
+      return res.status(403).json({ message: 'Apenas usuários com role administrator ou finance podem faturar.' });
+    }
+
+    // Bloqueio de módulo: empresa precisa ter o módulo financial ativo
+    const modules = req.user.modules || [];
+    if (!modules.includes('financial')) {
+      return res.status(403).json({ message: 'Módulo financeiro não está ativo para esta empresa.' });
+    }
+
+    const doc = await receivableService.invoiceFromServiceOrder({
+      companyId,
+      userId,
+      serviceOrderId: id,
+      data: req.body || {}
+    });
+    return res.status(201).json(doc);
+  } catch (err) {
+    logger.error('ServiceOrderController :: invoice >> ', err);
+    return res.status(err.status || 500).json({
+      message: err.message || 'Internal server error',
+      details: err.details
+    });
+  }
+};
+
+export const listReceivables = async (req, res) => {
+  try {
+    const companyId = req.user.companyId;
+    const { id } = req.params;
+    const list = await receivableService.listByServiceOrder(companyId, id);
+    return res.status(200).json(list);
+  } catch (err) {
+    logger.error('ServiceOrderController :: listReceivables >> ', err);
     return res.status(500).json({ message: 'Internal server error' });
   }
 };

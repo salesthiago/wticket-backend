@@ -31,3 +31,20 @@ export const uploadProductImage = multer({
   fileFilter,
   limits: { fileSize: 5 * 1024 * 1024 } // 5MB
 }).single('image');
+
+// ─── Certificado Digital NFS-e (PFX/P12) ──────────────────────────────────────
+const certFileFilter = (req, file, cb) => {
+  const okMime = ['application/x-pkcs12', 'application/pkcs12', 'application/octet-stream'];
+  const okExt = /\.(pfx|p12)$/i.test(file.originalname);
+  if (okExt || okMime.includes(file.mimetype)) {
+    cb(null, true);
+  } else {
+    cb(new Error('Tipo de arquivo não permitido. Envie um certificado .pfx ou .p12.'), false);
+  }
+};
+
+export const uploadNfseCertificate = multer({
+  storage: multer.memoryStorage(), // o conteúdo é tratado pelo certificate.service
+  fileFilter: certFileFilter,
+  limits: { fileSize: 2 * 1024 * 1024 } // 2MB é suficiente para PFX
+}).single('certificate');

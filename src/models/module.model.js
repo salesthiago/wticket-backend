@@ -1,6 +1,6 @@
 import mongoose from 'mongoose';
 
-export const MODULE_CODES = ['attendance', 'service_order', 'auto_attendance'];
+export const MODULE_CODES = ['attendance', 'service_order', 'auto_attendance', 'nfse', 'financial'];
 
 const ModuleSchema = new mongoose.Schema({
   code: {
