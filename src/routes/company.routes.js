@@ -14,4 +14,10 @@ router.post('/:id/modules', authenticate, companyController.addModule);
 router.delete('/:id/modules/:code', authenticate, companyController.removeModule);
 router.patch('/:id/modules/:code', authenticate, companyController.setModuleSubscription);
 
+// Storage S3 (config por empresa)
+router.get('/:id/storage', authenticate, companyController.getStorageConfig);
+router.put('/:id/storage', authenticate, companyController.updateStorageConfig);
+router.delete('/:id/storage', authenticate, companyController.deleteStorageConfig);
+router.post('/:id/storage/test', authenticate, companyController.testStorageConnection);
+
 export default router;

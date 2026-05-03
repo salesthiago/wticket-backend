@@ -106,6 +106,11 @@ class ProductRepository {
     return await ProductImage.find({ companyId, product: productId }).sort({ order: 1 });
   }
 
+  async findImageById(companyId, imageId) {
+    if (!companyId) throw new Error('companyId is required');
+    return await ProductImage.findOne({ _id: imageId, companyId });
+  }
+
   async deleteImage(companyId, imageId) {
     if (!companyId) throw new Error('companyId is required');
     try {

@@ -18,6 +18,12 @@ const ProductImageSchema = new mongoose.Schema({
     required: true,
     trim: true
   },
+  // Localização no S3 — quando o objeto foi armazenado lá. Imagens antigas
+  // (anteriores à migração) ficam com storageSource='local' e seguem
+  // servidas do disco via /uploads/products/...
+  storageKey: { type: String, trim: true },
+  storageBucket: { type: String, trim: true },
+  storageSource: { type: String, enum: ['company', 'default', 'local'], default: 'local' },
   filename: {
     type: String,
     trim: true

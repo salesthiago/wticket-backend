@@ -1,5 +1,6 @@
 import logger from '../utils/logger.js';
 import productRepository from '../repositories/product.repository.js';
+import * as s3Service from '../services/storage/s3.service.js';
 
 // ─── Products ──────────────────────────────────────────────────────────────────
 
@@ -148,17 +149,46 @@ export const addImage = async (req, res) => {
     const { id } = req.params;
 
     let url, filename, mimetype, size, altText, order;
+    let storageKey, storageBucket, storageSource;
 
     if (req.file) {
-      const baseUrl = process.env.API_URL || `${req.protocol}://${req.get('host')}`;
-      url = `${baseUrl}/uploads/products/${req.file.filename}`;
+      // Upload via multer (memoryStorage) → envia ao S3
       filename = req.file.originalname;
       mimetype = req.file.mimetype;
       size = req.file.size;
       altText = req.body.altText;
       order = req.body.order;
+
+      // Nome único + extensão original (preserva legibilidade)
+      const ts = Date.now();
+      const rand = Math.round(Math.random() * 1e9);
+      const ext = (filename.match(/\.([A-Za-z0-9]+)$/)?.[1] || 'bin').toLowerCase();
+      const baseName = filename.replace(/\.[^.]+$/, '');
+      const objectName = `${ts}-${rand}-${baseName}.${ext}`;
+
+      try {
+        const result = await s3Service.uploadObject({
+          companyId,
+          category: `products/${id}`,
+          filename: objectName,
+          body: req.file.buffer,
+          contentType: mimetype,
+          publicRead: true
+        });
+        url = result.url;
+        storageKey = result.key;
+        storageBucket = result.bucket;
+        storageSource = result.source;
+      } catch (uploadErr) {
+        logger.error('ProductController :: addImage S3 upload >> ', uploadErr);
+        return res.status(500).json({
+          message: uploadErr?.message || 'Falha ao enviar imagem ao S3'
+        });
+      }
     } else {
+      // URL externa fornecida diretamente (sem upload de arquivo)
       ({ url, filename, mimetype, size, altText, order } = req.body);
+      storageSource = 'local'; // marcador: não está no nosso S3
     }
 
     if (!url) {
@@ -173,7 +203,10 @@ export const addImage = async (req, res) => {
       mimetype,
       size,
       altText,
-      order: order ?? 0
+      order: order ?? 0,
+      storageKey,
+      storageBucket,
+      storageSource
     });
 
     return res.status(201).json(image);
@@ -203,9 +236,20 @@ export const deleteImage = async (req, res) => {
     const companyId = req.user.companyId;
     const { imageId } = req.params;
 
-    const image = await productRepository.deleteImage(companyId, imageId);
-    if (!image) return res.status(404).json({ message: 'Image not found' });
+    // Busca primeiro para conhecer a chave no S3 antes de remover do banco
+    const existing = await productRepository.findImageById(companyId, imageId);
+    if (!existing) return res.status(404).json({ message: 'Image not found' });
 
+    // Best-effort: tenta apagar do S3, mas não bloqueia a remoção do registro
+    if (existing.storageKey && (existing.storageSource === 'company' || existing.storageSource === 'default')) {
+      try {
+        await s3Service.deleteObject({ companyId, key: existing.storageKey });
+      } catch (s3Err) {
+        logger.warn('ProductController :: deleteImage S3 delete failed >> ', s3Err?.message);
+      }
+    }
+
+    await productRepository.deleteImage(companyId, imageId);
     return res.status(200).json({ message: 'Image deleted successfully' });
   } catch (err) {
     logger.error('ProductController :: deleteImage >> ', err);

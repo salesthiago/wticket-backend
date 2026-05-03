@@ -26,6 +26,23 @@ const CompanyModuleSchema = new mongoose.Schema({
   expiresAt: { type: Date }
 }, { _id: false });
 
+// Configuração S3 por empresa. Quando ausente ou enabled=false, usa as credenciais
+// padrão do .env. O secretAccessKey é cifrado com AES-256-GCM (utils/crypto.util.js)
+// reaproveitando a chave NFSE_CERT_KEY.
+const StorageConfigSchema = new mongoose.Schema({
+  enabled: { type: Boolean, default: false },
+  bucket: { type: String, trim: true },
+  region: { type: String, trim: true },
+  accessKeyId: { type: String, trim: true },
+  secretAccessKeyEnc: { type: String, trim: true }, // cifrado, nunca exposto na API
+  prefix: { type: String, trim: true, default: '' }, // ex.: 'wticket/'
+  publicBaseUrl: { type: String, trim: true },        // ex.: CloudFront URL
+  endpoint: { type: String, trim: true },             // S3-compatible (R2, MinIO etc.)
+  forcePathStyle: { type: Boolean, default: false },
+  testedAt: { type: Date },
+  testOk: { type: Boolean, default: false }
+}, { _id: false });
+
 const CompanySchema = new mongoose.Schema({
   name: { type: String, required: true, trim: true, index: true },
   document: { type: String, trim: true, index: true, sparse: true },
@@ -44,6 +61,7 @@ const CompanySchema = new mongoose.Schema({
     ref: 'User'
   },
   modules: { type: [CompanyModuleSchema], default: [] },
+  storageConfig: { type: StorageConfigSchema, default: null },
   trialEndsAt: { type: Date }
 }, { timestamps: true });
 

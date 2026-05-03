@@ -3,9 +3,39 @@ import companyRepository from '../repositories/company.repository.js';
 import moduleRepository from '../repositories/module.repository.js';
 import userRepository from '../repositories/user.repository.js';
 import User from '../models/user.model.js';
+import { encryptSecret } from '../utils/crypto.util.js';
+import * as s3Service from '../services/storage/s3.service.js';
 
 const isSuperAdmin = (req) => req.user?.role === 'super_admin';
 const isOwnCompany = (req) => req.user?.companyId && req.params.id === String(req.user.companyId);
+
+// Quem pode editar a config de storage da empresa:
+//   super_admin (qualquer empresa) OU company_admin/administrator da própria empresa
+function canManageStorage(req) {
+  if (isSuperAdmin(req)) return true;
+  if (!isOwnCompany(req)) return false;
+  return req.user?.role === 'company_admin' || req.user?.role === 'administrator';
+}
+
+// Sanitiza a config antes de devolver à API (NUNCA expõe o secret)
+function sanitizeStorageConfig(sc, source = 'company') {
+  if (!sc) return { source: 'default', enabled: false, configured: false };
+  return {
+    source,
+    enabled: !!sc.enabled,
+    configured: !!(sc.bucket && sc.region && sc.accessKeyId && sc.secretAccessKeyEnc),
+    bucket: sc.bucket,
+    region: sc.region,
+    accessKeyId: sc.accessKeyId,
+    prefix: sc.prefix || '',
+    publicBaseUrl: sc.publicBaseUrl || '',
+    endpoint: sc.endpoint || '',
+    forcePathStyle: !!sc.forcePathStyle,
+    secretAccessKeyMasked: sc.secretAccessKeyEnc ? '••••••••' : null,
+    testedAt: sc.testedAt || null,
+    testOk: !!sc.testOk
+  };
+}
 
 export const findAll = async (req, res) => {
   try {
@@ -222,6 +252,155 @@ export const register = async (req, res) => {
     });
   } catch (err) {
     logger.error('Company register error', err);
+    return res.status(500).json({ message: 'Internal server error' });
+  }
+};
+
+// ─── Storage S3 ─────────────────────────────────────────────────────────────
+
+export const getStorageConfig = async (req, res) => {
+  try {
+    if (!isSuperAdmin(req) && !isOwnCompany(req)) {
+      return res.status(403).json({ message: 'Forbidden' });
+    }
+    const { id } = req.params;
+    const company = await companyRepository.findById(id);
+    if (!company) return res.status(404).json({ message: 'Company not found' });
+
+    const sc = company.storageConfig;
+    const usingCompanyConfig = !!(sc?.enabled && sc?.bucket);
+    const sanitized = sanitizeStorageConfig(sc, usingCompanyConfig ? 'company' : 'default');
+
+    // Indica se há config padrão disponível no .env (sem expor credenciais)
+    const hasDefaultEnv = !!(process.env.S3_DEFAULT_BUCKET && process.env.S3_DEFAULT_REGION
+      && process.env.S3_DEFAULT_ACCESS_KEY && process.env.S3_DEFAULT_SECRET_KEY);
+
+    return res.json({
+      ...sanitized,
+      defaultAvailable: hasDefaultEnv
+    });
+  } catch (err) {
+    logger.error('Company getStorageConfig error', err);
+    return res.status(500).json({ message: 'Internal server error' });
+  }
+};
+
+export const updateStorageConfig = async (req, res) => {
+  try {
+    if (!canManageStorage(req)) {
+      return res.status(403).json({ message: 'Apenas super_admin ou administrador da empresa' });
+    }
+    const { id } = req.params;
+    const company = await companyRepository.findById(id);
+    if (!company) return res.status(404).json({ message: 'Company not found' });
+
+    const body = req.body || {};
+    const current = company.storageConfig || {};
+
+    // Validação básica quando enabled = true
+    const enabled = body.enabled === undefined ? !!current.enabled : !!body.enabled;
+    if (enabled) {
+      const bucket = body.bucket ?? current.bucket;
+      const region = body.region ?? current.region;
+      const accessKeyId = body.accessKeyId ?? current.accessKeyId;
+      const willHaveSecret = !!body.secretAccessKey || !!current.secretAccessKeyEnc;
+      if (!bucket || !region || !accessKeyId || !willHaveSecret) {
+        return res.status(422).json({
+          message: 'Para habilitar storage próprio, informe bucket, region, accessKeyId e secretAccessKey.'
+        });
+      }
+    }
+
+    // Constrói novo storageConfig (preserva campos não enviados)
+    const next = {
+      enabled,
+      bucket: body.bucket ?? current.bucket,
+      region: body.region ?? current.region,
+      accessKeyId: body.accessKeyId ?? current.accessKeyId,
+      secretAccessKeyEnc: body.secretAccessKey
+        ? encryptSecret(body.secretAccessKey)
+        : current.secretAccessKeyEnc,
+      prefix: body.prefix ?? current.prefix ?? '',
+      publicBaseUrl: body.publicBaseUrl ?? current.publicBaseUrl ?? '',
+      endpoint: body.endpoint ?? current.endpoint ?? '',
+      forcePathStyle: body.forcePathStyle ?? current.forcePathStyle ?? false,
+      // testOk só é resetado quando credenciais mudam
+      testedAt: current.testedAt,
+      testOk: current.testOk
+    };
+    if (body.bucket || body.region || body.accessKeyId || body.secretAccessKey || body.endpoint) {
+      next.testOk = false;
+      next.testedAt = null;
+    }
+
+    const updated = await companyRepository.update(id, { storageConfig: next });
+    s3Service.invalidateCompanyCache(id);
+    return res.json(sanitizeStorageConfig(updated.storageConfig, enabled ? 'company' : 'default'));
+  } catch (err) {
+    logger.error('Company updateStorageConfig error', err);
+    return res.status(500).json({ message: 'Internal server error' });
+  }
+};
+
+export const deleteStorageConfig = async (req, res) => {
+  try {
+    if (!canManageStorage(req)) {
+      return res.status(403).json({ message: 'Apenas super_admin ou administrador da empresa' });
+    }
+    const { id } = req.params;
+    const updated = await companyRepository.update(id, { storageConfig: null });
+    if (!updated) return res.status(404).json({ message: 'Company not found' });
+    s3Service.invalidateCompanyCache(id);
+    return res.json({ message: 'Configuração removida. Voltando para o storage padrão.' });
+  } catch (err) {
+    logger.error('Company deleteStorageConfig error', err);
+    return res.status(500).json({ message: 'Internal server error' });
+  }
+};
+
+export const testStorageConnection = async (req, res) => {
+  try {
+    if (!canManageStorage(req)) {
+      return res.status(403).json({ message: 'Apenas super_admin ou administrador da empresa' });
+    }
+    const { id } = req.params;
+    const body = req.body || {};
+
+    let result;
+    if (body.bucket && body.region && body.accessKeyId && body.secretAccessKey) {
+      // Testa credenciais fornecidas no payload (antes de salvar)
+      result = await s3Service.testConnection({
+        config: {
+          bucket: body.bucket,
+          region: body.region,
+          accessKeyId: body.accessKeyId,
+          secretAccessKey: body.secretAccessKey,
+          endpoint: body.endpoint,
+          forcePathStyle: !!body.forcePathStyle
+        }
+      });
+    } else {
+      // Usa config persistida da empresa (ou padrão se não houver)
+      result = await s3Service.testConnection({ companyId: id });
+    }
+
+    // Se testou pela config persistida (sem payload), atualiza testOk
+    if (!body.bucket) {
+      const company = await companyRepository.findById(id);
+      if (company?.storageConfig) {
+        await companyRepository.update(id, {
+          storageConfig: {
+            ...company.storageConfig.toObject(),
+            testedAt: new Date(),
+            testOk: result.ok
+          }
+        });
+      }
+    }
+
+    return res.status(result.ok ? 200 : 422).json(result);
+  } catch (err) {
+    logger.error('Company testStorageConnection error', err);
     return res.status(500).json({ message: 'Internal server error' });
   }
 };
