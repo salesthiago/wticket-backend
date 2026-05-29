@@ -11,7 +11,11 @@ const PartSchema = new mongoose.Schema({
   name: { type: String, required: true, trim: true },
   quantity: { type: Number, required: true, default: 1, min: 1 },
   unitPrice: { type: Number, required: true, min: 0 },
-  total: { type: Number, required: true, min: 0 }
+  total: { type: Number, required: true, min: 0 },
+  // Vínculo opcional com o catálogo de produtos (peça pode ser texto livre)
+  productId: { type: mongoose.Schema.Types.ObjectId, ref: 'Product' },
+  // Quanto desta peça já foi baixado do estoque (controle de reconciliação)
+  deductedQuantity: { type: Number, default: 0, min: 0 }
 }, { _id: false });
 
 const StatusHistorySchema = new mongoose.Schema({

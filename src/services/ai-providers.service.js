@@ -75,12 +75,50 @@ class AiProvidersService {
 
   // ─── Gemini ──────────────────────────────────────────────────────────────────
 
+  // Modelos descontinuados → substituto GA equivalente (compat. com configs salvas)
+  _normalizeGeminiModel(model) {
+    const DEPRECATED = {
+      'gemini-2.0-flash-exp': 'gemini-2.0-flash',
+      'gemini-1.5-flash-latest': 'gemini-1.5-flash',
+      'gemini-1.5-pro-latest': 'gemini-1.5-pro'
+    };
+    return DEPRECATED[model] || model || 'gemini-2.5-flash';
+  }
+
   async _sendGemini(token, model, message, systemPrompt) {
+    const resolvedModel = this._normalizeGeminiModel(model);
     const genAI = new GoogleGenerativeAI(token);
-    const geminiModel = genAI.getGenerativeModel({ model: model || 'gemini-2.0-flash-exp' });
+    const geminiModel = genAI.getGenerativeModel({ model: resolvedModel });
     const prompt = systemPrompt ? `${systemPrompt}\n\n${message}` : message;
-    const result = await geminiModel.generateContent(prompt);
-    return { text: result.response.text() };
+    try {
+      const result = await geminiModel.generateContent(prompt);
+      return { text: result.response.text() };
+    } catch (err) {
+      throw new Error(this._friendlyGeminiError(err, resolvedModel));
+    }
+  }
+
+  // Converte erros verbosos da API do Gemini em mensagens curtas e acionáveis.
+  _friendlyGeminiError(err, model) {
+    const status = err?.status;
+    const raw = err?.message || '';
+
+    if (status === 429 || /quota|rate limit|too many requests/i.test(raw)) {
+      const retry = raw.match(/retry in ([\d.]+)s/i)?.[1];
+      const base = `Cota da API do Google excedida para o modelo "${model}". `
+        + 'Habilite o faturamento (billing) no projeto da sua API key ou use uma chave de um projeto com free tier ativo.';
+      return retry ? `${base} Tente novamente em ~${Math.ceil(Number(retry))}s.` : base;
+    }
+    if (status === 404 || /is not found|not supported/i.test(raw)) {
+      return `Modelo "${model}" indisponível para esta API key. Selecione outro modelo Gemini.`;
+    }
+    if (status === 400 || /api key not valid|api_key_invalid/i.test(raw)) {
+      return 'API key do Gemini inválida. Verifique a chave em aistudio.google.com/app/apikey.';
+    }
+    if (status === 403 || /permission|forbidden/i.test(raw)) {
+      return 'Acesso negado pela API do Google. Verifique se a Generative Language API está habilitada para esta chave.';
+    }
+    return raw || 'Erro ao chamar a API do Gemini.';
   }
 
   // ─── OpenAI ──────────────────────────────────────────────────────────────────

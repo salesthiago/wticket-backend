@@ -1,5 +1,7 @@
 import logger from '../utils/logger.js';
 import productRepository from '../repositories/product.repository.js';
+import stockMovementRepository from '../repositories/stock-movement.repository.js';
+import stockService from '../services/stock.service.js';
 import * as s3Service from '../services/storage/s3.service.js';
 
 // ─── Products ──────────────────────────────────────────────────────────────────
@@ -96,6 +98,7 @@ export const update = async (req, res) => {
 export const updateStock = async (req, res) => {
   try {
     const companyId = req.user.companyId;
+    const userId = req.user.sub;
     const { id } = req.params;
     const { quantity } = req.body;
 
@@ -103,12 +106,75 @@ export const updateStock = async (req, res) => {
       return res.status(422).json({ message: 'Field quantity is required and must be a number' });
     }
 
-    const product = await productRepository.updateStock(companyId, id, parseInt(quantity));
-    if (!product) return res.status(404).json({ message: 'Product not found' });
+    const delta = parseInt(quantity);
+    if (delta === 0) {
+      return res.status(422).json({ message: 'Quantity must not be zero' });
+    }
+
+    const { product } = await stockService.registerMovement({
+      companyId,
+      productId: id,
+      type: delta > 0 ? 'in' : 'out',
+      quantity: Math.abs(delta),
+      reason: 'adjustment',
+      notes: req.body.notes,
+      userId
+    });
 
     return res.status(200).json(product);
   } catch (err) {
     logger.error('ProductController :: updateStock >> ', err);
+    return res.status(err.status || 500).json({ message: err.message || 'Internal server error' });
+  }
+};
+
+// ─── Stock Movements ─────────────────────────────────────────────────────────
+
+export const createStockMovement = async (req, res) => {
+  try {
+    const companyId = req.user.companyId;
+    const userId = req.user.sub;
+    const { id } = req.params;
+    const { type, quantity, notes } = req.body;
+
+    if (!['in', 'out'].includes(type)) {
+      return res.status(422).json({ message: 'Field type must be "in" or "out"' });
+    }
+    if (quantity === undefined || isNaN(quantity) || Number(quantity) <= 0) {
+      return res.status(422).json({ message: 'Field quantity is required and must be greater than zero' });
+    }
+
+    const { product, movement } = await stockService.registerMovement({
+      companyId,
+      productId: id,
+      type,
+      quantity: Number(quantity),
+      reason: type === 'in' ? 'manual_in' : 'manual_out',
+      notes,
+      userId
+    });
+
+    return res.status(201).json({ product, movement });
+  } catch (err) {
+    logger.error('ProductController :: createStockMovement >> ', err);
+    return res.status(err.status || 500).json({ message: err.message || 'Internal server error' });
+  }
+};
+
+export const listStockMovements = async (req, res) => {
+  try {
+    const companyId = req.user.companyId;
+    const { id } = req.params;
+    const { page, limit } = req.query;
+
+    const result = await stockMovementRepository.findByProduct(companyId, id, {
+      page: page ? parseInt(page) - 1 : 0,
+      limit: limit ? parseInt(limit) : 20
+    });
+
+    return res.status(200).json(result);
+  } catch (err) {
+    logger.error('ProductController :: listStockMovements >> ', err);
     return res.status(500).json({ message: 'Internal server error' });
   }
 };

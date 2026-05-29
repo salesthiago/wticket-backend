@@ -15,6 +15,10 @@ router.put('/:id', productController.update);
 router.patch('/:id/stock', productController.updateStock);
 router.delete('/:id/destroy', productController.destroy);
 
+// Stock Movements
+router.get('/:id/stock-movements', productController.listStockMovements);
+router.post('/:id/stock-movements', productController.createStockMovement);
+
 // Product Images
 router.get('/:id/images', productController.getImages);
 router.post('/:id/images', uploadProductImage, productController.addImage);

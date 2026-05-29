@@ -2,6 +2,7 @@ import logger from '../utils/logger.js';
 import serviceOrderRepository from '../repositories/service-order.repository.js';
 import customerRepository from '../repositories/customer.repository.js';
 import receivableService from '../services/financial/receivable.service.js';
+import stockService from '../services/stock.service.js';
 
 export const findAll = async (req, res) => {
   try {
@@ -162,6 +163,20 @@ export const updateStatus = async (req, res) => {
 
     if (status === 'cancelled') {
       updateData.cancelReason = notes || '';
+      // Devolve ao estoque tudo que foi baixado pelas peças desta OS.
+      if (serviceOrder.parts?.length) {
+        await stockService.reverseServiceOrderParts({
+          companyId,
+          serviceOrderId: id,
+          orderNumber: serviceOrder.orderNumber,
+          parts: serviceOrder.parts,
+          userId: req.user.sub
+        });
+        updateData.parts = serviceOrder.parts.map(p => ({
+          ...(p.toObject ? p.toObject() : p),
+          deductedQuantity: 0
+        }));
+      }
     }
 
     await serviceOrderRepository.update(companyId, id, updateData);
@@ -192,8 +207,20 @@ export const addDiagnosis = async (req, res) => {
 
     const updateData = { diagnosis };
     if (services) updateData.services = services;
-    if (parts) updateData.parts = parts;
     if (estimatedCost !== undefined) updateData.estimatedCost = estimatedCost;
+
+    // Peças: reconcilia o estoque (baixa/estorno por delta) antes de salvar.
+    // Bloqueia (409) se faltar saldo em algum produto vinculado.
+    if (parts) {
+      updateData.parts = await stockService.reconcileServiceOrderParts({
+        companyId,
+        serviceOrderId: id,
+        orderNumber: serviceOrder.orderNumber,
+        oldParts: serviceOrder.parts || [],
+        newParts: parts,
+        userId: req.user.sub
+      });
+    }
 
     await serviceOrderRepository.update(companyId, id, updateData);
 
@@ -201,7 +228,7 @@ export const addDiagnosis = async (req, res) => {
     return res.status(200).json(updated);
   } catch (err) {
     logger.error('ServiceOrderController :: addDiagnosis >> ', err);
-    return res.status(500).json({ message: 'Internal server error' });
+    return res.status(err.status || 500).json({ message: err.message || 'Internal server error' });
   }
 };
 
@@ -288,8 +315,22 @@ export const destroy = async (req, res) => {
     const companyId = req.user.companyId;
     const { id } = req.params;
 
+    // Carrega antes do soft delete para conhecer as peças baixadas.
+    const existing = await serviceOrderRepository.findById(companyId, id);
+
     const serviceOrder = await serviceOrderRepository.softDelete(companyId, id);
     if (!serviceOrder) return res.status(404).json({ message: 'Service order not found' });
+
+    // Devolve ao estoque as peças que tinham baixa registrada.
+    if (existing?.parts?.length) {
+      await stockService.reverseServiceOrderParts({
+        companyId,
+        serviceOrderId: id,
+        orderNumber: existing.orderNumber,
+        parts: existing.parts,
+        userId: req.user.sub
+      });
+    }
 
     return res.status(200).json({ message: 'Service order deleted successfully' });
   } catch (err) {
