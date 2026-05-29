@@ -72,6 +72,14 @@ const TicketSchema = new mongoose.Schema({
     ref: 'AiAgent',
     default: null
   },
+  // Quem gerou o ticket: 'manual' (operador), 'bot' (fluxo automatizado),
+  // 'gpt'/'gemini'/'claude' (agente de IA) ou 'whatsapp' (mensagem recebida do cliente).
+  origin: {
+    type: String,
+    enum: ['manual', 'bot', 'gpt', 'gemini', 'claude', 'whatsapp'],
+    default: 'whatsapp',
+    index: true
+  },
   resolution: {
     type: String
   },

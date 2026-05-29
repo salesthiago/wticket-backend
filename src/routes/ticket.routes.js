@@ -7,6 +7,7 @@ const router = Router();
 router.use(authenticate, requireTenant, requireModule('attendance'));
 
 router.get('/', ticketController.findAll);
+router.post('/', ticketController.create);
 router.put('/:id', ticketController.update);
 router.get('/:id', ticketController.findById);
 router.patch('/:id/sale-items', ticketController.updateSaleItems);
