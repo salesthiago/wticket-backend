@@ -151,8 +151,10 @@ export const addImage = async (req, res) => {
     let url, filename, mimetype, size, altText, order;
     let storageKey, storageBucket, storageSource;
 
+  
     if (req.file) {
-      // Upload via multer (memoryStorage) → envia ao S3
+      const baseUrl = process.env.API_URL || `${req.protocol}://${req.get('host')}`;
+      url = `${baseUrl}/uploads/products/${req.file.filename}`;
       filename = req.file.originalname;
       mimetype = req.file.mimetype;
       size = req.file.size;
@@ -206,7 +208,8 @@ export const addImage = async (req, res) => {
       order: order ?? 0,
       storageKey,
       storageBucket,
-      storageSource
+      storageSource,
+      order: order ?? 0
     });
 
     return res.status(201).json(image);
@@ -250,6 +253,9 @@ export const deleteImage = async (req, res) => {
     }
 
     await productRepository.deleteImage(companyId, imageId);
+    const image = await productRepository.deleteImage(companyId, imageId);
+    if (!image) return res.status(404).json({ message: 'Image not found' });
+
     return res.status(200).json({ message: 'Image deleted successfully' });
   } catch (err) {
     logger.error('ProductController :: deleteImage >> ', err);
