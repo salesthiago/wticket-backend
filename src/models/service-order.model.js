@@ -18,6 +18,19 @@ const PartSchema = new mongoose.Schema({
   deductedQuantity: { type: Number, default: 0, min: 0 }
 }, { _id: false });
 
+// Foto anexada à OS (ex.: estado do veículo na entrada). Armazenada no S3 da
+// empresa quando configurado, com fallback para disco local (/uploads).
+const PhotoSchema = new mongoose.Schema({
+  url: { type: String, required: true, trim: true },
+  storageKey: { type: String, trim: true },
+  storageBucket: { type: String, trim: true },
+  storageSource: { type: String, enum: ['company', 'default', 'local'], default: 'local' },
+  filename: { type: String, trim: true },
+  mimetype: { type: String, trim: true },
+  size: { type: Number },
+  order: { type: Number, default: 0 }
+}, { timestamps: true });
+
 const StatusHistorySchema = new mongoose.Schema({
   status: { type: String, required: true },
   changedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
@@ -46,15 +59,27 @@ const ServiceOrderSchema = new mongoose.Schema({
     index: true
   },
 
-  // Equipamento
+  // Veículo (oficina) — referência opcional ao veículo do cliente
+  vehicleId: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'Vehicle',
+    index: true
+  },
+
+  // Equipamento (na oficina: o automóvel)
   equipment: {
-    type: { type: String, required: true, trim: true },       // ex: Notebook, Celular, Impressora
-    brand: { type: String, trim: true },                       // ex: Dell, Samsung
-    model: { type: String, trim: true },                       // ex: Inspiron 15
-    serialNumber: { type: String, trim: true },
+    type: { type: String, required: true, trim: true },       // ex: Notebook, Celular | oficina: 'automovel'
+    brand: { type: String, trim: true },                       // ex: Dell | oficina: marca do veículo
+    model: { type: String, trim: true },                       // ex: Inspiron 15 | oficina: modelo do veículo
+    plate: { type: String, trim: true, uppercase: true },      // Placa (oficina)
+    mileage: { type: Number, min: 0 },                         // KM informado na OS (oficina)
+    serialNumber: { type: String, trim: true },                // oficina: chassi, se desejado
     accessories: { type: String, trim: true },                 // ex: Carregador, Cabo USB
     condition: { type: String, trim: true }                    // Estado fisico na entrada
   },
+
+  // Fotos anexadas à OS (oficina: fotos do carro)
+  photos: [PhotoSchema],
 
   // Problema
   reportedIssue: {

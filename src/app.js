@@ -16,7 +16,8 @@ const app = express();
 // Configuração CORS dinâmica para aceitar múltiplas origens
 const allowedOrigins = [
   'http://localhost:4200',
-  'https://wticket.godprovider.com.br',
+  'http://localhost:4300',
+  'https://wticket.com.br',
   process.env.FRONTEND_URL
 ].filter(Boolean); // Remove valores undefined/null
 

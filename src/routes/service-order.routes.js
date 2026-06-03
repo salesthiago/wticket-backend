@@ -1,5 +1,6 @@
 import { Router } from 'express';
 import { authenticate, requireTenant, requireModule } from '../middleware/auth.middleware.js';
+import { uploadServiceOrderPhoto } from '../middleware/upload.middleware.js';
 import * as serviceOrderController from '../controller/service-order.controller.js';
 
 const router = Router();
@@ -10,6 +11,10 @@ router.get('/', serviceOrderController.findAll);
 router.get('/dashboard', serviceOrderController.dashboard);
 router.get('/number/:orderNumber', serviceOrderController.findByOrderNumber);
 router.get('/customer/:customerId', serviceOrderController.findByCustomer);
+router.get('/:id/pdf', serviceOrderController.exportPdf);
+router.get('/:id/photos', serviceOrderController.getPhotos);
+router.post('/:id/photos', uploadServiceOrderPhoto, serviceOrderController.addPhoto);
+router.delete('/:id/photos/:photoId', serviceOrderController.deletePhoto);
 router.get('/:id', serviceOrderController.findById);
 router.post('/', serviceOrderController.create);
 router.put('/:id', serviceOrderController.update);

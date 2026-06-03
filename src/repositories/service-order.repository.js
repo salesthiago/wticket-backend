@@ -38,6 +38,7 @@ class ServiceOrderRepository {
       const [records, total] = await Promise.all([
         ServiceOrder.find(query)
           .populate('customerId', 'name phone email document')
+          .populate('vehicleId', 'plate brand model')
           .populate('technicianId', 'name email')
           .sort({ createdAt: -1 })
           .skip(page * limit)
@@ -65,6 +66,7 @@ class ServiceOrderRepository {
     if (!companyId) throw new Error('companyId is required');
     return await ServiceOrder.findOne({ companyId, orderNumber, isActive: true })
       .populate('customerId', 'name phone email document address')
+      .populate('vehicleId', 'plate brand model year color fuel mileage')
       .populate('technicianId', 'name email');
   }
 
@@ -85,6 +87,7 @@ class ServiceOrderRepository {
       { new: true }
     )
       .populate('customerId', 'name phone email document address')
+      .populate('vehicleId', 'plate brand model year color fuel mileage')
       .populate('technicianId', 'name email');
   }
 
@@ -93,6 +96,31 @@ class ServiceOrderRepository {
     return await ServiceOrder.findOneAndUpdate(
       { _id: id, companyId, isActive: true },
       { $push: { statusHistory: statusEntry } },
+      { new: true }
+    );
+  }
+
+  async addPhoto(companyId, id, photo) {
+    if (!companyId) throw new Error('companyId is required');
+    return await ServiceOrder.findOneAndUpdate(
+      { _id: id, companyId, isActive: true },
+      { $push: { photos: photo } },
+      { new: true }
+    );
+  }
+
+  async findPhoto(companyId, id, photoId) {
+    if (!companyId) throw new Error('companyId is required');
+    const order = await ServiceOrder.findOne({ _id: id, companyId, isActive: true }, { photos: 1 });
+    if (!order) return null;
+    return order.photos.id(photoId);
+  }
+
+  async removePhoto(companyId, id, photoId) {
+    if (!companyId) throw new Error('companyId is required');
+    return await ServiceOrder.findOneAndUpdate(
+      { _id: id, companyId, isActive: true },
+      { $pull: { photos: { _id: photoId } } },
       { new: true }
     );
   }

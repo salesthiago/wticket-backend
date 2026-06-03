@@ -11,6 +11,7 @@ import botConfig from './bot-config.routes.js'
 import appointmentRoutes from './appointment.routes.js'
 import productRoutes from './product.routes.js'
 import customerRoutes from './customer.routes.js'
+import vehicleRoutes from './vehicle.routes.js'
 import leadRoutes from './lead.routes.js'
 import aiAgentRoutes from './ai-agent.routes.js'
 import aiProvidersRoutes from './ai-providers.routes.js'
@@ -37,6 +38,7 @@ router.use('/bot-config', botConfig);
 router.use('/appointments', appointmentRoutes);
 router.use('/products', productRoutes);
 router.use('/customers', customerRoutes);
+router.use('/vehicles', vehicleRoutes);
 router.use('/leads', leadRoutes);
 router.use('/ai-agents', aiAgentRoutes);
 router.use('/ai-providers', aiProvidersRoutes);

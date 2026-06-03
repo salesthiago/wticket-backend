@@ -1,8 +1,28 @@
+import fs from 'fs';
+import path from 'path';
 import logger from '../utils/logger.js';
 import serviceOrderRepository from '../repositories/service-order.repository.js';
 import customerRepository from '../repositories/customer.repository.js';
+import vehicleRepository from '../repositories/vehicle.repository.js';
+import companyRepository from '../repositories/company.repository.js';
 import receivableService from '../services/financial/receivable.service.js';
 import stockService from '../services/stock.service.js';
+import * as s3Service from '../services/storage/s3.service.js';
+import { buildServiceOrderPdf } from '../services/service-order-pdf.service.js';
+
+// Atualiza o KM (mileage) do veículo sempre que informado em uma OS.
+// Aceita vehicleId como ObjectId/string ou como documento populado.
+const syncVehicleMileage = async (companyId, vehicleId, mileage) => {
+  const id = vehicleId && typeof vehicleId === 'object' ? (vehicleId._id || vehicleId.id) : vehicleId;
+  if (!id || mileage === undefined || mileage === null || mileage === '') return;
+  const km = Number(mileage);
+  if (Number.isNaN(km) || km < 0) return;
+  try {
+    await vehicleRepository.update(companyId, id, { mileage: km });
+  } catch (err) {
+    logger.warn('ServiceOrderController :: syncVehicleMileage >> ', err?.message);
+  }
+};
 
 export const findAll = async (req, res) => {
   try {
@@ -72,7 +92,7 @@ export const findByCustomer = async (req, res) => {
 export const create = async (req, res) => {
   try {
     const companyId = req.user.companyId;
-    const { customerId, equipment, reportedIssue, priority, technicianId, estimatedCompletionDate, internalNotes } = req.body;
+    const { customerId, vehicleId, equipment, reportedIssue, priority, technicianId, estimatedCompletionDate, internalNotes } = req.body;
 
     if (!customerId || !equipment?.type || !reportedIssue) {
       return res.status(422).json({
@@ -86,6 +106,7 @@ export const create = async (req, res) => {
     const serviceOrder = await serviceOrderRepository.create({
       companyId,
       customerId,
+      vehicleId: vehicleId || undefined,
       equipment,
       reportedIssue,
       priority,
@@ -98,6 +119,9 @@ export const create = async (req, res) => {
         notes: 'Ordem de serviço criada'
       }]
     });
+
+    // Ajusta o KM do veículo com o valor informado na OS.
+    await syncVehicleMileage(companyId, serviceOrder.vehicleId, serviceOrder.equipment?.mileage);
 
     return res.status(201).json(serviceOrder);
   } catch (err) {
@@ -122,6 +146,9 @@ export const update = async (req, res) => {
 
     const serviceOrder = await serviceOrderRepository.update(companyId, id, body);
     if (!serviceOrder) return res.status(404).json({ message: 'Service order not found' });
+
+    // Ajusta o KM do veículo sempre que informado na OS.
+    await syncVehicleMileage(companyId, serviceOrder.vehicleId, serviceOrder.equipment?.mileage);
 
     return res.status(200).json(serviceOrder);
   } catch (err) {
@@ -335,6 +362,147 @@ export const destroy = async (req, res) => {
     return res.status(200).json({ message: 'Service order deleted successfully' });
   } catch (err) {
     logger.error('ServiceOrderController :: destroy >> ', err);
+    return res.status(500).json({ message: 'Internal server error' });
+  }
+};
+
+// ─── Impressão em PDF ───────────────────────────────────────────────────────────
+
+export const exportPdf = async (req, res) => {
+  try {
+    const companyId = req.user.companyId;
+    const { id } = req.params;
+
+    const order = await serviceOrderRepository.findById(companyId, id);
+    if (!order) return res.status(404).json({ message: 'Service order not found' });
+
+    const company = await companyRepository.findById(companyId);
+
+    const buffer = await buildServiceOrderPdf({
+      order: order.toObject ? order.toObject() : order,
+      company: company ? (company.toObject ? company.toObject() : company) : null
+    });
+
+    const fname = `OS-${order.orderNumber || id}.pdf`;
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', `inline; filename="${fname}"`);
+    res.setHeader('Content-Length', String(buffer.length));
+    return res.end(buffer);
+  } catch (err) {
+    logger.error('ServiceOrderController :: exportPdf >> ', err);
+    return res.status(500).json({ message: 'Internal server error' });
+  }
+};
+
+// ─── Fotos da OS ────────────────────────────────────────────────────────────────
+
+// Armazena o arquivo no S3 da empresa (quando configurado) ou no disco local.
+const storeOsPhoto = async ({ companyId, serviceOrderId, file, req }) => {
+  const ts = Date.now();
+  const rand = Math.round(Math.random() * 1e9);
+  const ext = (file.originalname.match(/\.([A-Za-z0-9]+)$/)?.[1] || 'jpg').toLowerCase();
+  const objectName = `${ts}-${rand}.${ext}`;
+
+  const useS3 = await s3Service.hasConfig(companyId);
+  if (useS3) {
+    const result = await s3Service.uploadObject({
+      companyId,
+      category: `service-orders/${serviceOrderId}`,
+      filename: objectName,
+      body: file.buffer,
+      contentType: file.mimetype,
+      publicRead: true
+    });
+    return {
+      url: result.url,
+      storageKey: result.key,
+      storageBucket: result.bucket,
+      storageSource: result.source,
+      filename: file.originalname,
+      mimetype: file.mimetype,
+      size: file.size
+    };
+  }
+
+  // Fallback local: grava em uploads/service-orders/<id> e serve por /uploads.
+  const dir = path.join('uploads', 'service-orders', String(serviceOrderId));
+  fs.mkdirSync(dir, { recursive: true });
+  fs.writeFileSync(path.join(dir, objectName), file.buffer);
+  const baseUrl = process.env.API_URL || `${req.protocol}://${req.get('host')}`;
+  return {
+    url: `${baseUrl}/uploads/service-orders/${serviceOrderId}/${objectName}`,
+    storageSource: 'local',
+    filename: file.originalname,
+    mimetype: file.mimetype,
+    size: file.size
+  };
+};
+
+export const getPhotos = async (req, res) => {
+  try {
+    const companyId = req.user.companyId;
+    const { id } = req.params;
+    const order = await serviceOrderRepository.findById(companyId, id);
+    if (!order) return res.status(404).json({ message: 'Service order not found' });
+    return res.status(200).json(order.photos || []);
+  } catch (err) {
+    logger.error('ServiceOrderController :: getPhotos >> ', err);
+    return res.status(500).json({ message: 'Internal server error' });
+  }
+};
+
+export const addPhoto = async (req, res) => {
+  try {
+    const companyId = req.user.companyId;
+    const { id } = req.params;
+
+    if (!req.file) {
+      return res.status(422).json({ message: 'Photo file is required' });
+    }
+
+    const order = await serviceOrderRepository.findById(companyId, id);
+    if (!order) return res.status(404).json({ message: 'Service order not found' });
+
+    let photo;
+    try {
+      photo = await storeOsPhoto({ companyId, serviceOrderId: id, file: req.file, req });
+    } catch (uploadErr) {
+      logger.error('ServiceOrderController :: addPhoto upload >> ', uploadErr);
+      return res.status(500).json({ message: uploadErr?.message || 'Falha ao enviar foto' });
+    }
+
+    photo.order = order.photos?.length || 0;
+    const updated = await serviceOrderRepository.addPhoto(companyId, id, photo);
+    return res.status(201).json(updated.photos);
+  } catch (err) {
+    logger.error('ServiceOrderController :: addPhoto >> ', err);
+    return res.status(500).json({ message: 'Internal server error' });
+  }
+};
+
+export const deletePhoto = async (req, res) => {
+  try {
+    const companyId = req.user.companyId;
+    const { id, photoId } = req.params;
+
+    const photo = await serviceOrderRepository.findPhoto(companyId, id, photoId);
+    if (!photo) return res.status(404).json({ message: 'Photo not found' });
+
+    // Best-effort: remove do S3 quando aplicável (não bloqueia a remoção do registro).
+    if (photo.storageKey && (photo.storageSource === 'company' || photo.storageSource === 'default')) {
+      try {
+        await s3Service.deleteObject({ companyId, key: photo.storageKey });
+      } catch (s3Err) {
+        logger.warn('ServiceOrderController :: deletePhoto S3 delete failed >> ', s3Err?.message);
+      }
+    }
+
+    const updated = await serviceOrderRepository.removePhoto(companyId, id, photoId);
+    if (!updated) return res.status(404).json({ message: 'Service order not found' });
+
+    return res.status(200).json(updated.photos);
+  } catch (err) {
+    logger.error('ServiceOrderController :: deletePhoto >> ', err);
     return res.status(500).json({ message: 'Internal server error' });
   }
 };

@@ -37,6 +37,14 @@ export const uploadProductImage = multer({
   limits: { fileSize: 5 * 1024 * 1024 } // 5MB
 }).single('image');
 
+// ─── Fotos da Ordem de Serviço (oficina) ──────────────────────────────────────
+// Memória: o controller decide entre S3 e disco local.
+export const uploadServiceOrderPhoto = multer({
+  storage: multer.memoryStorage(),
+  fileFilter,
+  limits: { fileSize: 5 * 1024 * 1024 } // 5MB
+}).single('photo');
+
 // ─── Certificado Digital NFS-e (PFX/P12) ──────────────────────────────────────
 const certFileFilter = (req, file, cb) => {
   const okMime = ['application/x-pkcs12', 'application/pkcs12', 'application/octet-stream'];
