@@ -17,6 +17,37 @@ async function generateUniqueSku(companyId, prefix = 'PRD') {
   return `${prefix}-${Date.now().toString(36).toUpperCase()}`;
 }
 
+// Imagens são privadas no S3. A permissão de leitura é concedida apenas no
+// momento da requisição, gerando uma URL pré-assinada válida por 1 hora.
+async function presignImage(companyId, image) {
+  if (!image) return image;
+  const obj = typeof image.toObject === 'function' ? image.toObject() : { ...image };
+  if (obj.storageKey && obj.storageSource !== 'local') {
+    try {
+      obj.url = await s3Service.getPresignedUrl({ companyId, key: obj.storageKey, expiresIn: 60 * 60 });
+    } catch (err) {
+      logger.warn('ProductController :: falha ao gerar URL pré-assinada da imagem >> ', err?.message);
+      obj.url = null;
+    }
+  }
+  return obj;
+}
+
+// Aplica presignImage à mainImage e à lista images (quando populadas).
+async function presignProduct(companyId, product) {
+  if (!product) return product;
+  const obj = typeof product.toObject === 'function' ? product.toObject() : { ...product };
+  if (obj.mainImage && typeof obj.mainImage === 'object') {
+    obj.mainImage = await presignImage(companyId, obj.mainImage);
+  }
+  if (Array.isArray(obj.images)) {
+    obj.images = await Promise.all(
+      obj.images.map(img => (img && typeof img === 'object') ? presignImage(companyId, img) : img)
+    );
+  }
+  return obj;
+}
+
 // ─── Products ──────────────────────────────────────────────────────────────────
 
 export const findAll = async (req, res) => {
@@ -32,6 +63,9 @@ export const findAll = async (req, res) => {
       limit: limit ? parseInt(limit) : 10
     });
 
+    result.records = await Promise.all(
+      (result.records || []).map(r => presignProduct(companyId, r))
+    );
     return res.status(200).json(result);
   } catch (err) {
     logger.error('ProductController :: findAll >> ', err);
@@ -47,7 +81,7 @@ export const findById = async (req, res) => {
     const product = await productRepository.findById(companyId, id);
     if (!product) return res.status(404).json({ message: 'Product not found' });
 
-    return res.status(200).json(product);
+    return res.status(200).json(await presignProduct(companyId, product));
   } catch (err) {
     logger.error('ProductController :: findById >> ', err);
     return res.status(500).json({ message: 'Internal server error' });
@@ -225,7 +259,8 @@ export const getImages = async (req, res) => {
     const { id } = req.params;
 
     const images = await productRepository.findImagesByProduct(companyId, id);
-    return res.status(200).json(images);
+    const out = await Promise.all(images.map(img => presignImage(companyId, img)));
+    return res.status(200).json(out);
   } catch (err) {
     logger.error('ProductController :: getImages >> ', err);
     return res.status(500).json({ message: 'Internal server error' });
@@ -240,10 +275,7 @@ export const addImage = async (req, res) => {
     let url, filename, mimetype, size, altText, order;
     let storageKey, storageBucket, storageSource;
 
-  
     if (req.file) {
-      const baseUrl = process.env.API_URL || `${req.protocol}://${req.get('host')}`;
-      url = `${baseUrl}/uploads/products/${req.file.filename}`;
       filename = req.file.originalname;
       mimetype = req.file.mimetype;
       size = req.file.size;
@@ -258,18 +290,18 @@ export const addImage = async (req, res) => {
       const objectName = `${ts}-${rand}-${baseName}.${ext}`;
 
       try {
+        // Upload PRIVADO (sem ACL pública). A URL é gerada sob demanda (presigned).
         const result = await s3Service.uploadObject({
           companyId,
           category: `products/${id}`,
           filename: objectName,
           body: req.file.buffer,
-          contentType: mimetype,
-          publicRead: true
+          contentType: mimetype
         });
-        url = result.url;
         storageKey = result.key;
         storageBucket = result.bucket;
         storageSource = result.source;
+        // url permanece indefinida — não persistimos URL pública.
       } catch (uploadErr) {
         logger.error('ProductController :: addImage S3 upload >> ', uploadErr);
         return res.status(500).json({
@@ -282,7 +314,7 @@ export const addImage = async (req, res) => {
       storageSource = 'local'; // marcador: não está no nosso S3
     }
 
-    if (!url) {
+    if (!req.file && !url) {
       return res.status(422).json({ message: 'Image file or url is required' });
     }
 
@@ -294,14 +326,13 @@ export const addImage = async (req, res) => {
       mimetype,
       size,
       altText,
-      order: order ?? 0,
       storageKey,
       storageBucket,
       storageSource,
       order: order ?? 0
     });
 
-    return res.status(201).json(image);
+    return res.status(201).json(await presignImage(companyId, image));
   } catch (err) {
     logger.error('ProductController :: addImage >> ', err);
     return res.status(500).json({ message: 'Internal server error' });
@@ -316,7 +347,7 @@ export const setMainImage = async (req, res) => {
     const product = await productRepository.setMainImage(companyId, id, imageId);
     if (!product) return res.status(404).json({ message: 'Product not found' });
 
-    return res.status(200).json(product);
+    return res.status(200).json(await presignProduct(companyId, product));
   } catch (err) {
     logger.error('ProductController :: setMainImage >> ', err);
     return res.status(500).json({ message: 'Internal server error' });

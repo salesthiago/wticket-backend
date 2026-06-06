@@ -18,6 +18,8 @@ const allowedOrigins = [
   'http://localhost:4200',
   'http://localhost:4300',
   'https://wticket.com.br',
+  'https://app.wticket.com.br',
+  'https://oficina.wticket.com.br',
   process.env.FRONTEND_URL
 ].filter(Boolean); // Remove valores undefined/null
 

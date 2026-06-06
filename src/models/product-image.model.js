@@ -13,9 +13,11 @@ const ProductImageSchema = new mongoose.Schema({
     required: true,
     index: true
   },
+  // Opcional: imagens no S3 privado não têm URL pública persistida.
+  // A URL é gerada sob demanda (pré-assinada) a partir de storageKey.
+  // Mantida para imagens locais/externas (storageSource='local').
   url: {
     type: String,
-    required: true,
     trim: true
   },
   // Localização no S3 — quando o objeto foi armazenado lá. Imagens antigas
