@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import * as companyController from '../controller/company.controller.js';
 import { authenticate } from '../middleware/auth.middleware.js';
+import { uploadCompanyLogo } from '../middleware/upload.middleware.js';
 
 const router = Router();
 
@@ -19,5 +20,9 @@ router.get('/:id/storage', authenticate, companyController.getStorageConfig);
 router.put('/:id/storage', authenticate, companyController.updateStorageConfig);
 router.delete('/:id/storage', authenticate, companyController.deleteStorageConfig);
 router.post('/:id/storage/test', authenticate, companyController.testStorageConnection);
+
+// Logo da empresa
+router.post('/:id/logo', authenticate, uploadCompanyLogo, companyController.uploadLogo);
+router.delete('/:id/logo', authenticate, companyController.deleteLogo);
 
 export default router;

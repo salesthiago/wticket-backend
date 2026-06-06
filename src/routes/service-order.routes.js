@@ -13,6 +13,7 @@ router.get('/number/:orderNumber', serviceOrderController.findByOrderNumber);
 router.get('/customer/:customerId', serviceOrderController.findByCustomer);
 router.get('/:id/pdf', serviceOrderController.exportPdf);
 router.get('/:id/photos', serviceOrderController.getPhotos);
+router.get('/:id/photos/:photoId/url', serviceOrderController.getPhotoUrl);
 router.post('/:id/photos', uploadServiceOrderPhoto, serviceOrderController.addPhoto);
 router.delete('/:id/photos/:photoId', serviceOrderController.deletePhoto);
 router.get('/:id', serviceOrderController.findById);

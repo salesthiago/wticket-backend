@@ -43,6 +43,15 @@ const StorageConfigSchema = new mongoose.Schema({
   testOk: { type: Boolean, default: false }
 }, { _id: false });
 
+// Logo da empresa. Quando enviada, é armazenada no S3 (publicRead) reaproveitando
+// o storageConfig da empresa; storageSource indica a origem (company/default).
+const LogoSchema = new mongoose.Schema({
+  url: { type: String, trim: true },
+  storageKey: { type: String, trim: true },
+  storageBucket: { type: String, trim: true },
+  storageSource: { type: String, trim: true }
+}, { _id: false });
+
 const CompanySchema = new mongoose.Schema({
   name: { type: String, required: true, trim: true, index: true },
   document: { type: String, trim: true, index: true, sparse: true },
@@ -62,6 +71,7 @@ const CompanySchema = new mongoose.Schema({
   },
   modules: { type: [CompanyModuleSchema], default: [] },
   storageConfig: { type: StorageConfigSchema, default: null },
+  logo: { type: LogoSchema, default: null },
   trialEndsAt: { type: Date }
 }, { timestamps: true });
 

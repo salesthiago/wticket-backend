@@ -9,12 +9,17 @@ class ProductRepository {
     return await product.save();
   }
 
-  async findAll(companyId, { search, isActive, page = 0, limit = 10 } = {}) {
+  async findAll(companyId, { search, isActive, service, page = 0, limit = 10 } = {}) {
     if (!companyId) throw new Error('companyId is required');
     const query = { companyId };
 
     if (typeof isActive === 'boolean') {
       query.isActive = isActive;
+    }
+
+    if (typeof service === 'boolean') {
+      // service=true → apenas serviços; service=false → apenas produtos/peças
+      query.service = service ? true : { $ne: true };
     }
 
     if (search) {

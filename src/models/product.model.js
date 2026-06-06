@@ -24,6 +24,14 @@ const ProductSchema = new mongoose.Schema({
     type: String,
     trim: true
   },
+  brand: {
+    type: String,
+    trim: true
+  },
+  model: {
+    type: String,
+    trim: true
+  },
   description: {
     type: String,
     trim: true
@@ -53,6 +61,10 @@ const ProductSchema = new mongoose.Schema({
     index: true
   },
   isVirtual: {
+    type: Boolean,
+    default: false
+  },
+  service: {
     type: Boolean,
     default: false
   },

@@ -4,16 +4,30 @@ import stockMovementRepository from '../repositories/stock-movement.repository.j
 import stockService from '../services/stock.service.js';
 import * as s3Service from '../services/storage/s3.service.js';
 
+// Gera um SKU único por empresa quando o usuário não informa um.
+// Formato: PRD-XXXXXX (produto) ou SRV-XXXXXX (serviço), em base36 maiúsculo.
+async function generateUniqueSku(companyId, prefix = 'PRD') {
+  for (let i = 0; i < 6; i++) {
+    const rand = Math.floor(Math.random() * 36 ** 4).toString(36).toUpperCase().padStart(4, '0');
+    const candidate = `${prefix}-${Date.now().toString(36).toUpperCase().slice(-4)}${rand}`;
+    const existing = await productRepository.findBySku(companyId, candidate);
+    if (!existing) return candidate;
+  }
+  // Fallback improvável de colisão repetida
+  return `${prefix}-${Date.now().toString(36).toUpperCase()}`;
+}
+
 // ─── Products ──────────────────────────────────────────────────────────────────
 
 export const findAll = async (req, res) => {
   try {
     const companyId = req.user.companyId;
-    const { search, isActive, page, limit } = req.query;
+    const { search, isActive, service, page, limit } = req.query;
 
     const result = await productRepository.findAll(companyId, {
       search,
       isActive: isActive !== undefined ? isActive === 'true' : undefined,
+      service: service !== undefined ? service === 'true' : undefined,
       page: page ? parseInt(page) - 1 : 0,
       limit: limit ? parseInt(limit) : 10
     });
@@ -43,27 +57,36 @@ export const findById = async (req, res) => {
 export const create = async (req, res) => {
   try {
     const companyId = req.user.companyId;
-    const { name, sku, ncmCode, description, price, stock, isActive, isVirtual, trackStock, downloadUrl } = req.body;
+    const { name, sku, ncmCode, brand, model, description, price, stock, isActive, isVirtual, service, trackStock, downloadUrl } = req.body;
 
-    if (!name || !sku || price === undefined) {
-      return res.status(422).json({ message: 'Fields name, sku and price are required' });
+    if (!name || price === undefined) {
+      return res.status(422).json({ message: 'Fields name and price are required' });
     }
 
-    const existing = await productRepository.findBySku(companyId, sku);
-    if (existing) {
-      return res.status(409).json({ message: 'SKU already in use' });
+    // SKU é opcional: se não informado, gera um código único automaticamente.
+    let finalSku = (sku || '').trim();
+    if (finalSku) {
+      const existing = await productRepository.findBySku(companyId, finalSku);
+      if (existing) {
+        return res.status(409).json({ message: 'SKU already in use' });
+      }
+    } else {
+      finalSku = await generateUniqueSku(companyId, service ? 'SRV' : 'PRD');
     }
 
     const product = await productRepository.create({
       companyId,
       name,
-      sku,
+      sku: finalSku,
       ncmCode,
+      brand: brand || undefined,
+      model: model || undefined,
       description,
       price,
       stock: stock ?? 0,
       isActive: isActive !== undefined ? isActive : true,
       isVirtual: isVirtual ?? false,
+      service: service ?? false,
       trackStock: trackStock !== undefined ? trackStock : true,
       downloadUrl: downloadUrl || undefined
     });

@@ -37,6 +37,31 @@ function sanitizeStorageConfig(sc, source = 'company') {
   };
 }
 
+// A logo é guardada de forma PRIVADA no S3 (sem ACL pública). A permissão de
+// leitura é concedida apenas no momento da requisição, gerando uma URL
+// pré-assinada válida por 1 hora. Retorna um objeto simples (não-documento)
+// com logo.url preenchida quando há storageKey.
+async function attachLogoUrl(company) {
+  if (!company) return company;
+  const obj = typeof company.toObject === 'function' ? company.toObject() : { ...company };
+  if (obj.logo?.storageKey) {
+    try {
+      obj.logo = {
+        ...obj.logo,
+        url: await s3Service.getPresignedUrl({
+          companyId: String(obj._id),
+          key: obj.logo.storageKey,
+          expiresIn: 60 * 60 // 1 hora
+        })
+      };
+    } catch (err) {
+      logger.warn('Company :: falha ao gerar URL pré-assinada da logo', err?.message);
+      obj.logo = { ...obj.logo, url: null };
+    }
+  }
+  return obj;
+}
+
 export const findAll = async (req, res) => {
   try {
     if (!isSuperAdmin(req)) {
@@ -64,7 +89,7 @@ export const findById = async (req, res) => {
     const { id } = req.params;
     const company = await companyRepository.findById(id);
     if (!company) return res.status(404).json({ message: 'Company not found' });
-    return res.json(company);
+    return res.json(await attachLogoUrl(company));
   } catch (err) {
     logger.error('Company findById error', err);
     return res.status(500).json({ message: 'Internal server error' });
@@ -87,7 +112,7 @@ export const update = async (req, res) => {
 
     const updated = await companyRepository.update(id, data);
     if (!updated) return res.status(404).json({ message: 'Company not found' });
-    return res.json(updated);
+    return res.json(await attachLogoUrl(updated));
   } catch (err) {
     logger.error('Company update error', err);
     return res.status(500).json({ message: 'Internal server error' });
@@ -401,6 +426,90 @@ export const testStorageConnection = async (req, res) => {
     return res.status(result.ok ? 200 : 422).json(result);
   } catch (err) {
     logger.error('Company testStorageConnection error', err);
+    return res.status(500).json({ message: 'Internal server error' });
+  }
+};
+
+// ─── Logo da Empresa ─────────────────────────────────────────────────────────
+
+export const uploadLogo = async (req, res) => {
+  try {
+    // Mesma regra do storage: super_admin ou admin da própria empresa
+    if (!canManageStorage(req)) {
+      return res.status(403).json({ message: 'Apenas super_admin ou administrador da empresa' });
+    }
+    const { id } = req.params;
+    if (!req.file) {
+      return res.status(422).json({ message: 'Arquivo de logo é obrigatório (campo "logo")' });
+    }
+
+    const company = await companyRepository.findById(id);
+    if (!company) return res.status(404).json({ message: 'Company not found' });
+
+    const ext = (req.file.originalname.match(/\.([A-Za-z0-9]+)$/)?.[1] || 'png').toLowerCase();
+    const objectName = `logo-${Date.now()}.${ext}`;
+
+    let logo;
+    try {
+      const result = await s3Service.uploadObject({
+        companyId: id,
+        category: 'company/logo',
+        filename: objectName,
+        body: req.file.buffer,
+        contentType: req.file.mimetype
+      });
+      logo = {
+        url: result.url,
+        storageKey: result.key,
+        storageBucket: result.bucket,
+        storageSource: result.source
+      };
+    } catch (uploadErr) {
+      logger.error('Company uploadLogo S3 error', uploadErr);
+      return res.status(500).json({ message: uploadErr?.message || 'Falha ao enviar logo ao S3' });
+    }
+
+    // Remove a logo antiga do bucket (se existir e for do nosso storage)
+    const oldKey = company.logo?.storageKey;
+    if (oldKey && oldKey !== logo.storageKey) {
+      try {
+        await s3Service.deleteObject({ companyId: id, key: oldKey });
+      } catch (delErr) {
+        logger.warn('Company uploadLogo :: falha ao remover logo antiga', delErr?.message);
+      }
+    }
+
+    const updated = await companyRepository.update(id, { logo });
+    const withUrl = await attachLogoUrl(updated);
+    return res.json({ logo: withUrl.logo });
+  } catch (err) {
+    logger.error('Company uploadLogo error', err);
+    return res.status(500).json({ message: 'Internal server error' });
+  }
+};
+
+export const deleteLogo = async (req, res) => {
+  try {
+    if (!canManageStorage(req)) {
+      return res.status(403).json({ message: 'Apenas super_admin ou administrador da empresa' });
+    }
+    const { id } = req.params;
+    const company = await companyRepository.findById(id);
+    if (!company) return res.status(404).json({ message: 'Company not found' });
+
+    const oldKey = company.logo?.storageKey;
+    if (oldKey) {
+      try {
+        await s3Service.deleteObject({ companyId: id, key: oldKey });
+      } catch (delErr) {
+        logger.warn('Company deleteLogo :: falha ao remover do bucket', delErr?.message);
+      }
+    }
+
+    await companyRepository.update(id, { logo: null });
+    return res.json({ message: 'Logo removida' });
+  } catch (err) {
+    logger.error('Company deleteLogo error', err);
     return res.status(500).json({ message: 'Internal server error' });
   }
 };

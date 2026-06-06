@@ -196,6 +196,18 @@ export async function getPresignedUrl({ companyId, key, expiresIn = DEFAULT_PRES
 }
 
 /**
+ * Baixa o objeto do bucket e devolve o conteúdo como Buffer.
+ * Usa as credenciais armazenadas — funciona mesmo para objetos privados.
+ * @returns {Promise<{ buffer: Buffer, contentType: string|undefined }>}
+ */
+export async function getObjectBuffer({ companyId, key }) {
+  const { client, config } = await getClient(companyId);
+  const res = await client.send(new GetObjectCommand({ Bucket: config.bucket, Key: key }));
+  const bytes = await res.Body.transformToByteArray();
+  return { buffer: Buffer.from(bytes), contentType: res.ContentType };
+}
+
+/**
  * Remove o objeto do bucket.
  */
 export async function deleteObject({ companyId, key }) {
@@ -261,6 +273,7 @@ export default {
   uploadObject,
   getPublicUrl,
   getPresignedUrl,
+  getObjectBuffer,
   deleteObject,
   testConnection,
   hasConfig,

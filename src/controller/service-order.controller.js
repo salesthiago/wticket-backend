@@ -378,9 +378,21 @@ export const exportPdf = async (req, res) => {
 
     const company = await companyRepository.findById(companyId);
 
+    // Logo da empresa (privada no S3): baixa os bytes para embutir no PDF.
+    let logoBuffer = null;
+    if (company?.logo?.storageKey) {
+      try {
+        const obj = await s3Service.getObjectBuffer({ companyId, key: company.logo.storageKey });
+        logoBuffer = obj.buffer;
+      } catch (logoErr) {
+        logger.warn('ServiceOrderController :: exportPdf logo fetch failed >> ', logoErr?.message);
+      }
+    }
+
     const buffer = await buildServiceOrderPdf({
       order: order.toObject ? order.toObject() : order,
-      company: company ? (company.toObject ? company.toObject() : company) : null
+      company: company ? (company.toObject ? company.toObject() : company) : null,
+      logo: logoBuffer
     });
 
     const fname = `OS-${order.orderNumber || id}.pdf`;
@@ -410,8 +422,7 @@ const storeOsPhoto = async ({ companyId, serviceOrderId, file, req }) => {
       category: `service-orders/${serviceOrderId}`,
       filename: objectName,
       body: file.buffer,
-      contentType: file.mimetype,
-      publicRead: true
+      contentType: file.mimetype
     });
     return {
       url: result.url,
@@ -438,15 +449,68 @@ const storeOsPhoto = async ({ companyId, serviceOrderId, file, req }) => {
   };
 };
 
+// Validade padrão das URLs temporárias de visualização das fotos (15 min).
+const PHOTO_VIEW_EXPIRES_IN = 15 * 60;
+
+// Resolve a URL de exibição de uma foto. Para objetos privados no S3 (company/default)
+// gera uma URL temporária assinada com as credenciais armazenadas; para arquivos
+// locais ou objetos públicos devolve a URL já persistida.
+const resolvePhotoViewUrl = async ({ companyId, photo, expiresIn = PHOTO_VIEW_EXPIRES_IN }) => {
+  if (photo?.storageKey && (photo.storageSource === 'company' || photo.storageSource === 'default')) {
+    return await s3Service.getPresignedUrl({ companyId, key: photo.storageKey, expiresIn });
+  }
+  return photo?.url || null;
+};
+
+// Converte uma lista de fotos em objetos planos, cada um com uma viewUrl temporária.
+const enrichPhotos = async (companyId, photos = []) => {
+  return await Promise.all(
+    photos.map(async (p) => {
+      const obj = p.toObject ? p.toObject() : { ...p };
+      try {
+        obj.viewUrl = await resolvePhotoViewUrl({ companyId, photo: obj });
+      } catch (signErr) {
+        logger.warn('ServiceOrderController :: enrichPhotos sign failed >> ', signErr?.message);
+        obj.viewUrl = obj.url || null;
+      }
+      return obj;
+    })
+  );
+};
+
 export const getPhotos = async (req, res) => {
   try {
     const companyId = req.user.companyId;
     const { id } = req.params;
     const order = await serviceOrderRepository.findById(companyId, id);
     if (!order) return res.status(404).json({ message: 'Service order not found' });
-    return res.status(200).json(order.photos || []);
+
+    const enriched = await enrichPhotos(companyId, order.photos || []);
+    return res.status(200).json(enriched);
   } catch (err) {
     logger.error('ServiceOrderController :: getPhotos >> ', err);
+    return res.status(500).json({ message: 'Internal server error' });
+  }
+};
+
+// Gera/renova sob demanda a URL temporária de uma foto específica.
+// Útil quando a viewUrl anterior expirou. Retorna { url, expiresIn }.
+export const getPhotoUrl = async (req, res) => {
+  try {
+    const companyId = req.user.companyId;
+    const { id, photoId } = req.params;
+
+    const photo = await serviceOrderRepository.findPhoto(companyId, id, photoId);
+    if (!photo) return res.status(404).json({ message: 'Photo not found' });
+
+    const obj = photo.toObject ? photo.toObject() : photo;
+    const expiresIn = PHOTO_VIEW_EXPIRES_IN;
+    const url = await resolvePhotoViewUrl({ companyId, photo: obj, expiresIn });
+    if (!url) return res.status(404).json({ message: 'Photo URL unavailable' });
+
+    return res.status(200).json({ url, expiresIn });
+  } catch (err) {
+    logger.error('ServiceOrderController :: getPhotoUrl >> ', err);
     return res.status(500).json({ message: 'Internal server error' });
   }
 };
@@ -473,7 +537,8 @@ export const addPhoto = async (req, res) => {
 
     photo.order = order.photos?.length || 0;
     const updated = await serviceOrderRepository.addPhoto(companyId, id, photo);
-    return res.status(201).json(updated.photos);
+    const enriched = await enrichPhotos(companyId, updated.photos || []);
+    return res.status(201).json(enriched);
   } catch (err) {
     logger.error('ServiceOrderController :: addPhoto >> ', err);
     return res.status(500).json({ message: 'Internal server error' });
@@ -500,7 +565,8 @@ export const deletePhoto = async (req, res) => {
     const updated = await serviceOrderRepository.removePhoto(companyId, id, photoId);
     if (!updated) return res.status(404).json({ message: 'Service order not found' });
 
-    return res.status(200).json(updated.photos);
+    const enriched = await enrichPhotos(companyId, updated.photos || []);
+    return res.status(200).json(enriched);
   } catch (err) {
     logger.error('ServiceOrderController :: deletePhoto >> ', err);
     return res.status(500).json({ message: 'Internal server error' });

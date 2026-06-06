@@ -49,8 +49,9 @@ const COLORS = {
  * @param {object} params
  * @param {object} params.order   OS populada (customerId, vehicleId)
  * @param {object} params.company Empresa (nome, documento, contato, endereço)
+ * @param {Buffer} [params.logo]  Bytes da logomarca (PNG/JPEG) para o cabeçalho
  */
-export function buildServiceOrderPdf({ order, company }) {
+export function buildServiceOrderPdf({ order, company, logo }) {
   return new Promise((resolve, reject) => {
     try {
       const doc = new PDFDocument({ size: 'A4', margin: 40 });
@@ -67,9 +68,22 @@ export function buildServiceOrderPdf({ order, company }) {
       const vehicle = (order.vehicleId && typeof order.vehicleId === 'object') ? order.vehicleId : {};
       const eq = order.equipment || {};
 
-      // ── Cabeçalho: empresa + título ──
+      // ── Cabeçalho: logo + empresa + título ──
+      // Desenha a logomarca à esquerda (quando configurada) e desloca o texto.
+      let headerTextX = left;
+      if (logo) {
+        const logoSize = 56;
+        try {
+          doc.image(logo, left, 40, { fit: [logoSize, logoSize] });
+          headerTextX = left + logoSize + 12;
+        } catch (imgErr) {
+          // Formato não suportado pelo PDFKit (ex.: WEBP/GIF) — segue sem logo.
+          headerTextX = left;
+        }
+      }
+      const headerTextW = (right - headerTextX) - 190; // reserva espaço do bloco da OS
       doc.fillColor(COLORS.text).font('Helvetica-Bold').fontSize(16)
-        .text(company?.name || 'Oficina', left, 40, { width: contentW * 0.6 });
+        .text(company?.name || 'Oficina', headerTextX, 40, { width: headerTextW });
       doc.font('Helvetica').fontSize(8).fillColor(COLORS.muted);
       const compLines = [
         company?.document ? `Doc: ${fmtDoc(company.document)}` : null,
@@ -77,7 +91,7 @@ export function buildServiceOrderPdf({ order, company }) {
         company?.email || null,
         fmtAddress(company?.address)
       ].filter(Boolean);
-      doc.text(compLines.join('\n'), left, doc.y + 2, { width: contentW * 0.6 });
+      doc.text(compLines.join('\n'), headerTextX, doc.y + 2, { width: headerTextW });
 
       // Bloco título OS (direita)
       const boxW = 180;
