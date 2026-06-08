@@ -1,5 +1,6 @@
 import fs from 'fs';
 import path from 'path';
+import sharp from 'sharp';
 import logger from '../utils/logger.js';
 import serviceOrderRepository from '../repositories/service-order.repository.js';
 import customerRepository from '../repositories/customer.repository.js';
@@ -389,10 +390,34 @@ export const exportPdf = async (req, res) => {
       }
     }
 
+    // Fotos anexadas: baixa os bytes (S3 ou disco local) para embutir no PDF.
+    // PDFKit não renderiza WEBP, então convertemos esses arquivos para JPEG só
+    // no momento da impressão (o arquivo original permanece intacto).
+    const orderPhotos = order.photos || [];
+    const photoImages = (await Promise.all(
+      orderPhotos.map(async (p) => {
+        const loaded = await loadPhotoBuffer({ companyId, photo: p });
+        if (!loaded?.buffer) return null;
+        const isWebp = loaded.mimetype === 'image/webp'
+          || /\.webp$/i.test(loaded.filename || '');
+        if (isWebp) {
+          try {
+            loaded.buffer = await sharp(loaded.buffer).jpeg({ quality: 82 }).toBuffer();
+            loaded.mimetype = 'image/jpeg';
+          } catch (convErr) {
+            logger.warn('ServiceOrderController :: exportPdf webp convert failed >> ', convErr?.message);
+            return null;
+          }
+        }
+        return loaded;
+      })
+    )).filter(Boolean);
+
     const buffer = await buildServiceOrderPdf({
       order: order.toObject ? order.toObject() : order,
       company: company ? (company.toObject ? company.toObject() : company) : null,
-      logo: logoBuffer
+      logo: logoBuffer,
+      photos: photoImages
     });
 
     const fname = `OS-${order.orderNumber || id}.pdf`;
@@ -447,6 +472,33 @@ const storeOsPhoto = async ({ companyId, serviceOrderId, file, req }) => {
     mimetype: file.mimetype,
     size: file.size
   };
+};
+
+// Carrega os bytes de uma foto da OS, seja do S3 (company/default) ou do disco
+// local (/uploads). Retorna null quando não for possível obter o arquivo.
+const loadPhotoBuffer = async ({ companyId, photo }) => {
+  const obj = photo?.toObject ? photo.toObject() : photo;
+  if (!obj) return null;
+  try {
+    if (obj.storageKey && (obj.storageSource === 'company' || obj.storageSource === 'default')) {
+      const result = await s3Service.getObjectBuffer({ companyId, key: obj.storageKey });
+      return { buffer: result.buffer, mimetype: obj.mimetype, filename: obj.filename };
+    }
+    if (obj.url) {
+      const marker = '/uploads/';
+      const idx = obj.url.indexOf(marker);
+      if (idx !== -1) {
+        const rel = obj.url.substring(idx + marker.length);
+        const filePath = path.join('uploads', ...rel.split('/').filter(Boolean));
+        if (fs.existsSync(filePath)) {
+          return { buffer: fs.readFileSync(filePath), mimetype: obj.mimetype, filename: obj.filename };
+        }
+      }
+    }
+  } catch (err) {
+    logger.warn('ServiceOrderController :: loadPhotoBuffer failed >> ', err?.message);
+  }
+  return null;
 };
 
 // Validade padrão das URLs temporárias de visualização das fotos (15 min).

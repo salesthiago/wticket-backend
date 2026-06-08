@@ -50,8 +50,10 @@ const COLORS = {
  * @param {object} params.order   OS populada (customerId, vehicleId)
  * @param {object} params.company Empresa (nome, documento, contato, endereço)
  * @param {Buffer} [params.logo]  Bytes da logomarca (PNG/JPEG) para o cabeçalho
+ * @param {Array<{buffer:Buffer,mimetype?:string,filename?:string}>} [params.photos]
+ *        Fotos anexadas à OS (JPEG/PNG) para exibir no PDF.
  */
-export function buildServiceOrderPdf({ order, company, logo }) {
+export function buildServiceOrderPdf({ order, company, logo, photos = [] }) {
   return new Promise((resolve, reject) => {
     try {
       const doc = new PDFDocument({ size: 'A4', margin: 40 });
@@ -227,6 +229,39 @@ export function buildServiceOrderPdf({ order, company, logo }) {
         doc.fillColor(COLORS.muted).font('Helvetica').fontSize(8)
           .text(`Garantia: ${order.warrantyDays} dias.`, left, y);
         y += 16;
+      }
+
+      // ── Fotos anexadas ──
+      if (photos && photos.length) {
+        const cols = 3;
+        const gap = 10;
+        const cellW = (contentW - gap * (cols - 1)) / cols;
+        const cellH = 110;
+
+        // Garante espaço para o título + ao menos uma linha de fotos.
+        if (y > doc.page.height - (cellH + 80)) { doc.addPage(); y = 40; }
+        sectionTitle('Fotos anexadas');
+
+        let col = 0;
+        let rowY = y;
+        for (const ph of photos) {
+          if (!ph?.buffer) continue;
+          if (rowY + cellH > doc.page.height - 60) { doc.addPage(); rowY = 40; col = 0; }
+          const x = left + col * (cellW + gap);
+          try {
+            doc.image(ph.buffer, x, rowY, { fit: [cellW, cellH], align: 'center', valign: 'center' });
+            doc.rect(x, rowY, cellW, cellH).strokeColor(COLORS.border).stroke();
+          } catch (imgErr) {
+            // Formato não suportado pelo PDFKit (ex.: WEBP/GIF) — desenha placeholder.
+            doc.rect(x, rowY, cellW, cellH).fillAndStroke(COLORS.headerBg, COLORS.border);
+            doc.fillColor(COLORS.muted).font('Helvetica').fontSize(7)
+              .text('Pré-visualização indisponível', x + 4, rowY + cellH / 2 - 4,
+                { width: cellW - 8, align: 'center' });
+          }
+          col++;
+          if (col >= cols) { col = 0; rowY += cellH + gap; }
+        }
+        y = (col === 0 ? rowY : rowY + cellH + gap) + 6;
       }
 
       // ── Assinaturas ──

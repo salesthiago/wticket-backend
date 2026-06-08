@@ -21,11 +21,27 @@ export const uploadProductImage = multer({
 
 // ─── Fotos da Ordem de Serviço (oficina) ──────────────────────────────────────
 // Memória: o controller decide entre S3 e disco local.
-export const uploadServiceOrderPhoto = multer({
+const MAX_OS_PHOTO_SIZE = 50 * 1024 * 1024; // 50MB
+
+const osPhotoUpload = multer({
   storage: multer.memoryStorage(),
   fileFilter,
-  limits: { fileSize: 5 * 1024 * 1024 } // 5MB
+  limits: { fileSize: MAX_OS_PHOTO_SIZE }
 }).single('photo');
+
+// Envolve o multer para traduzir os erros (tamanho/tipo) em mensagens claras,
+// caso contrário o limite estourado cai no handler padrão do Express (HTML 500).
+export const uploadServiceOrderPhoto = (req, res, next) => {
+  osPhotoUpload(req, res, (err) => {
+    if (!err) return next();
+    if (err instanceof multer.MulterError && err.code === 'LIMIT_FILE_SIZE') {
+      return res.status(413).json({
+        message: 'A foto excede o tamanho máximo permitido de 50MB. Envie uma imagem menor.'
+      });
+    }
+    return res.status(400).json({ message: err.message || 'Falha ao processar o upload da foto.' });
+  });
+};
 
 // ─── Logo da Empresa ──────────────────────────────────────────────────────────
 // Memória: o controller faz o upload ao S3 e persiste a URL/chave na empresa.
