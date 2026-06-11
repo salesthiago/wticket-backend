@@ -20,6 +20,8 @@ import companyRoutes from './company.routes.js'
 import moduleRoutes from './module.routes.js'
 import nfseRoutes from './nfse/index.js'
 import financialRoutes from './financial/index.js'
+import billingRoutes from './billing.routes.js'
+import planRoutes from './plan.routes.js'
 import swaggerUi from 'swagger-ui-express'
 //import swaggerFile from './swagger.json'
 
@@ -28,6 +30,7 @@ const router = express.Router();
 router.use('/auth', authRoutes);
 router.use('/companies', companyRoutes);
 router.use('/modules', moduleRoutes);
+router.use('/plans', planRoutes);
 router.use('/users', usersRoutes);
 router.use('/whatsapp', whatsappRoutes);
 router.use('/contacts', contactRoutes);
@@ -45,6 +48,7 @@ router.use('/ai-providers', aiProvidersRoutes);
 router.use('/service-orders', serviceOrderRoutes);
 router.use('/nfse', nfseRoutes);
 router.use('/financial', financialRoutes);
+router.use('/billing', billingRoutes);
 //router.use('/docs', swaggerUi.serve, swaggerUi.setup(swaggerFile));
 
 export default router

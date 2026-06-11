@@ -52,11 +52,13 @@ jobs:
           S3_DEFAULT_REGION: ${{ secrets.S3_DEFAULT_REGION }}
           S3_DEFAULT_ACCESS_KEY: ${{ secrets.S3_DEFAULT_ACCESS_KEY }}
           S3_DEFAULT_SECRET_KEY: ${{ secrets.S3_DEFAULT_SECRET_KEY }}
+          ABACATEPAY_API_KEY: ${{ secrets.ABACATEPAY_API_KEY }}
+          ABACATEPAY_WEBHOOK_SECRET: ${{ secrets.ABACATEPAY_WEBHOOK_SECRET }}
         with:
           host: ${{ secrets.EC2_HOST }}
           username: ${{ secrets.EC2_USER }}
           key: ${{ secrets.EC2_SSH_PRIVATE_KEY }}
-          envs: MONGO_URI,JWT_SECRET,FRONTEND_URL,CHROME_PATH,NFSE_CERT_KEY,S3_DEFAULT_BUCKET,S3_DEFAULT_REGION,S3_DEFAULT_ACCESS_KEY,S3_DEFAULT_SECRET_KEY
+          envs: MONGO_URI,JWT_SECRET,FRONTEND_URL,CHROME_PATH,NFSE_CERT_KEY,S3_DEFAULT_BUCKET,S3_DEFAULT_REGION,S3_DEFAULT_ACCESS_KEY,S3_DEFAULT_SECRET_KEY,ABACATEPAY_API_KEY,ABACATEPAY_WEBHOOK_SECRET
           script: |
             set -eo pipefail
             cd ~/wticket-deploy
@@ -76,6 +78,9 @@ jobs:
             S3_DEFAULT_REGION=${S3_DEFAULT_REGION}
             S3_DEFAULT_ACCESS_KEY=${S3_DEFAULT_ACCESS_KEY}
             S3_DEFAULT_SECRET_KEY=${S3_DEFAULT_SECRET_KEY}
+            ABACATEPAY_API_URL=https://api.abacatepay.com/v2
+            ABACATEPAY_API_KEY=${ABACATEPAY_API_KEY}
+            ABACATEPAY_WEBHOOK_SECRET=${ABACATEPAY_WEBHOOK_SECRET}
             EOF
             chmod 600 .env
 

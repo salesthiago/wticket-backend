@@ -42,7 +42,8 @@ app.use(cors({
   maxAge: 600 // Cache preflight por 10 minutos
 }));
 
-app.use(express.json());
+// Guarda o corpo raw (usado p/ validar a assinatura HMAC dos webhooks AbacatePay).
+app.use(express.json({ verify: (req, _res, buf) => { req.rawBody = buf; } }));
 app.use(express.urlencoded({ extended: true }));
 app.use(cookieParser());
 

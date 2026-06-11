@@ -1,10 +1,12 @@
 import logger from '../utils/logger.js';
 import companyRepository from '../repositories/company.repository.js';
 import moduleRepository from '../repositories/module.repository.js';
+import planRepository from '../repositories/plan.repository.js';
 import userRepository from '../repositories/user.repository.js';
 import User from '../models/user.model.js';
 import { encryptSecret } from '../utils/crypto.util.js';
 import * as s3Service from '../services/storage/s3.service.js';
+import subscriptionService from '../services/billing/subscription.service.js';
 
 const isSuperAdmin = (req) => req.user?.role === 'super_admin';
 const isOwnCompany = (req) => req.user?.companyId && req.params.id === String(req.user.companyId);
@@ -212,7 +214,8 @@ export const register = async (req, res) => {
     const {
       company: companyData,
       owner: ownerData,
-      modules: moduleCodes = []
+      modules: rawModuleCodes = [],
+      planId
     } = req.body;
 
     if (!companyData?.name || !companyData?.email) {
@@ -221,8 +224,20 @@ export const register = async (req, res) => {
     if (!ownerData?.name || !ownerData?.email || !ownerData?.password) {
       return res.status(400).json({ message: 'owner.name, owner.email and owner.password are required' });
     }
+
+    // Os módulos vêm do plano escolhido (preferencial) ou de uma lista avulsa.
+    let moduleCodes = rawModuleCodes;
+    let plan = null;
+    if (planId) {
+      plan = await planRepository.findById(planId);
+      if (!plan || !plan.isActive) {
+        return res.status(422).json({ message: 'Plano inválido ou inativo' });
+      }
+      moduleCodes = plan.moduleCodes;
+    }
+
     if (!Array.isArray(moduleCodes) || moduleCodes.length === 0) {
-      return res.status(400).json({ message: 'modules must be a non-empty array of codes' });
+      return res.status(400).json({ message: 'Informe um planId ou uma lista de modules' });
     }
 
     const existingUser = await User.findOne({ email: ownerData.email });
@@ -252,6 +267,7 @@ export const register = async (req, res) => {
     const company = await companyRepository.create({
       ...companyData,
       status: 'pending_payment',
+      planId: plan?._id,
       modules: modules.map(m => ({
         moduleId: m._id,
         code: m.code,
@@ -270,10 +286,36 @@ export const register = async (req, res) => {
 
     await companyRepository.update(company._id, { ownerId: owner._id });
 
+    // Gera a cobrança já no cadastro (best-effort): se a AbacatePay não estiver
+    // configurada ou falhar, o cadastro NÃO é bloqueado — o checkout vem null e o
+    // cliente pode tentar pagar depois.
+    let checkout = null;
+    let checkoutError = null;
+    if (plan) {
+      try {
+        checkout = await subscriptionService.createCheckout({
+          companyId: company._id,
+          planId: plan._id,
+          payer: {
+            name: ownerData.name,
+            email: companyData.email,
+            phone: companyData.phone,
+            taxId: companyData.document
+          }
+        });
+      } catch (err) {
+        checkoutError = err?.message || 'Falha ao gerar cobrança';
+        logger.warn(`Company register :: checkout não gerado p/ empresa ${company._id}: ${checkoutError}`);
+      }
+    }
+
     return res.status(201).json({
       company: { id: company._id, name: company.name, status: company.status },
       owner: { id: owner._id, name: owner.name, email: owner.email },
-      modules: modules.map(m => m.code)
+      modules: modules.map(m => m.code),
+      plan: plan ? { id: plan._id, name: plan.name, price: plan.price } : null,
+      checkout,
+      checkoutError
     });
   } catch (err) {
     logger.error('Company register error', err);

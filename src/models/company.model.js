@@ -69,6 +69,14 @@ const CompanySchema = new mongoose.Schema({
     type: mongoose.Schema.Types.ObjectId,
     ref: 'User'
   },
+  // Plano (assinatura) escolhido no cadastro; define os módulos e o preço único.
+  planId: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'Plan'
+  },
+  // Vínculos com o AbacatePay (cliente e assinatura recorrente ativa).
+  abacateCustomerId: { type: String, trim: true },
+  abacateSubscriptionId: { type: String, trim: true },
   modules: { type: [CompanyModuleSchema], default: [] },
   storageConfig: { type: StorageConfigSchema, default: null },
   logo: { type: LogoSchema, default: null },
