@@ -37,10 +37,11 @@ const TicketSchema = new mongoose.Schema({
   tags: [{
     type: String
   }],
-  messages: [{
-    type: mongoose.Schema.Types.ObjectId,
-    ref: 'Message'
-  }],
+  // messages desabilitado: dependente do WhatsApp (será serviço separado)
+  // messages: [{
+  //   type: mongoose.Schema.Types.ObjectId,
+  //   ref: 'Message'
+  // }],
   responses: [{
     content: { type: String, required: true },
     respondedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },

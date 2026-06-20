@@ -23,7 +23,6 @@ class TicketRepository {
         .populate('categoryId', 'name color')
         .populate('subjectId', 'name')
         .populate('statusId', 'name label color')
-        .populate('messages')
         .populate('appointmentId')
         .populate('serviceOrderId', 'orderNumber status')
         .populate('responses.respondedBy', 'name email');

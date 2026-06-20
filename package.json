@@ -8,6 +8,7 @@
     "dev": "nodemon src/server.js",
     "seed": "node src/scripts/seed.js",
     "seed:platform": "node src/scripts/seed-platform.js",
+    "seed:dev": "node src/scripts/seed-dev.js",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "keywords": [],
