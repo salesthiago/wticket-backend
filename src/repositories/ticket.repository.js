@@ -42,9 +42,9 @@ class TicketRepository {
     }
   }
 
-  async findAll({ categoryId = null, statusId = null, assignedTo = null } = {}) {
+  async findAll({ categoryId = null, statusId = null, assignedTo = null, companyId = null } = {}) {
     try {
-      const query = {};
+      const query = { companyId: companyId ?? null };
       if (categoryId) query.categoryId = categoryId;
       if (statusId) query.statusId = statusId;
       if (assignedTo) query.assignedTo = assignedTo;

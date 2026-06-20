@@ -123,36 +123,36 @@ async function seedModules(company) {
   console.log(`  activated: ${modules.map(m => m.code).join(', ')}`);
 }
 
-async function seedTicketStatuses() {
+async function seedTicketStatuses(companyId) {
   console.log('\nSeeding ticket statuses...');
-  // Reset default before upserting to avoid hook conflicts
-  await TicketStatus.updateMany({}, { $set: { isDefault: false } });
+  // Reset default antes de upsert para evitar conflito com o hook pre-save
+  await TicketStatus.updateMany({ companyId }, { $set: { isDefault: false } });
 
   for (const s of TICKET_STATUSES) {
-    const existing = await TicketStatus.findOne({ name: s.name });
+    const existing = await TicketStatus.findOne({ name: s.name, companyId });
     if (existing) {
-      Object.assign(existing, s);
+      Object.assign(existing, { ...s, companyId });
       await existing.save();
       console.log(`  updated: ${s.name}`);
     } else {
-      await TicketStatus.create(s);
+      await TicketStatus.create({ ...s, companyId });
       console.log(`  created: ${s.name}`);
     }
   }
 }
 
-async function seedTicketCategories() {
+async function seedTicketCategories(companyId) {
   console.log('\nSeeding ticket categories...');
   const categoryMap = {};
 
   for (const c of TICKET_CATEGORIES) {
-    let cat = await TicketCategory.findOne({ name: c.name });
+    let cat = await TicketCategory.findOne({ name: c.name, companyId });
     if (cat) {
-      Object.assign(cat, c);
+      Object.assign(cat, { ...c, companyId });
       await cat.save();
       console.log(`  updated: ${c.name}`);
     } else {
-      cat = await TicketCategory.create(c);
+      cat = await TicketCategory.create({ ...c, companyId });
       console.log(`  created: ${c.name}`);
     }
     categoryMap[c.name] = cat._id;
@@ -161,18 +161,18 @@ async function seedTicketCategories() {
   return categoryMap;
 }
 
-async function seedTicketSubjects(categoryMap) {
+async function seedTicketSubjects(categoryMap, companyId) {
   console.log('\nSeeding ticket subjects...');
   for (const [categoryName, subjects] of Object.entries(TICKET_SUBJECTS_BY_CATEGORY)) {
     const categoryId = categoryMap[categoryName];
     for (const s of subjects) {
-      const existing = await TicketSubject.findOne({ name: s.name, categoryId });
+      const existing = await TicketSubject.findOne({ name: s.name, categoryId, companyId });
       if (existing) {
-        Object.assign(existing, { ...s, categoryId });
+        Object.assign(existing, { ...s, categoryId, companyId });
         await existing.save();
         console.log(`  updated: ${s.name}`);
       } else {
-        await TicketSubject.create({ ...s, categoryId });
+        await TicketSubject.create({ ...s, categoryId, companyId });
         console.log(`  created: ${s.name}`);
       }
     }
@@ -185,9 +185,10 @@ async function run() {
     const company = await seedCompany();
     await seedUser(company);
     await seedModules(company);
-    await seedTicketStatuses();
-    const categoryMap = await seedTicketCategories();
-    await seedTicketSubjects(categoryMap);
+    const companyId = company._id;
+    await seedTicketStatuses(companyId);
+    const categoryMap = await seedTicketCategories(companyId);
+    await seedTicketSubjects(categoryMap, companyId);
     console.log('\nDev seed complete.');
     console.log(`\n  Company : ${DEV_COMPANY.name}`);
     console.log(`  Login   : ${DEV_USER.email}`);

@@ -4,8 +4,9 @@ import ticketStatusRepository from "../repositories/ticket-status.repository.js"
 
 export const findAll = async (req, res) => {
   try {
+    const companyId = req.user.companyId ?? null;
     const { categoryId, statusId, assignedTo } = req.query;
-    const tickets = await ticketRepository.findAll({ categoryId, statusId, assignedTo });
+    const tickets = await ticketRepository.findAll({ categoryId, statusId, assignedTo, companyId });
     return res.status(200).json(tickets);
   } catch (err) {
     logger.error("ticket findAll error >>> ", err);
@@ -15,15 +16,17 @@ export const findAll = async (req, res) => {
 
 export const create = async (req, res) => {
   try {
+    const companyId = req.user.companyId ?? null;
     const { contactNumber, contactName, categoryId, subjectId, statusId, priority, assignedTo, notes, tags } = req.body;
 
     let resolvedStatusId = statusId;
     if (!resolvedStatusId) {
-      const defaultStatus = await ticketStatusRepository.findDefault();
+      const defaultStatus = await ticketStatusRepository.findDefault(companyId);
       if (defaultStatus) resolvedStatusId = defaultStatus._id;
     }
 
     const ticket = await ticketRepository.create({
+      companyId,
       contactNumber,
       contactName,
       categoryId,

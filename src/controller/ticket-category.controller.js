@@ -3,8 +3,9 @@ import ticketCategoryRepository from '../repositories/ticket-category.repository
 
 export const findAll = async (req, res) => {
   try {
+    const companyId = req.user.companyId ?? null;
     const { active } = req.query;
-    const categories = await ticketCategoryRepository.findAll(active === 'true');
+    const categories = await ticketCategoryRepository.findAll(active === 'true', companyId);
     return res.status(200).json(categories);
   } catch (err) {
     logger.error('ticketCategory findAll error >>>', err);
@@ -14,8 +15,9 @@ export const findAll = async (req, res) => {
 
 export const findById = async (req, res) => {
   try {
+    const companyId = req.user.companyId ?? null;
     const { id } = req.params;
-    const category = await ticketCategoryRepository.findById(id);
+    const category = await ticketCategoryRepository.findById(id, companyId);
     if (!category) return res.status(404).json({ message: 'Categoria não encontrada' });
     return res.status(200).json(category);
   } catch (err) {
@@ -26,9 +28,10 @@ export const findById = async (req, res) => {
 
 export const create = async (req, res) => {
   try {
+    const companyId = req.user.companyId ?? null;
     const { name, description, color, isActive } = req.body;
     if (!name) return res.status(422).json({ message: 'Nome é obrigatório' });
-    const category = await ticketCategoryRepository.create({ name, description, color, isActive });
+    const category = await ticketCategoryRepository.create({ name, description, color, isActive, companyId });
     return res.status(201).json(category);
   } catch (err) {
     logger.error('ticketCategory create error >>>', err);
@@ -38,8 +41,9 @@ export const create = async (req, res) => {
 
 export const update = async (req, res) => {
   try {
+    const companyId = req.user.companyId ?? null;
     const { id } = req.params;
-    const updated = await ticketCategoryRepository.update(id, req.body);
+    const updated = await ticketCategoryRepository.update(id, req.body, companyId);
     if (!updated) return res.status(404).json({ message: 'Categoria não encontrada' });
     return res.status(200).json(updated);
   } catch (err) {
@@ -50,8 +54,9 @@ export const update = async (req, res) => {
 
 export const destroy = async (req, res) => {
   try {
+    const companyId = req.user.companyId ?? null;
     const { id } = req.params;
-    const deleted = await ticketCategoryRepository.delete(id);
+    const deleted = await ticketCategoryRepository.delete(id, companyId);
     if (!deleted) return res.status(404).json({ message: 'Categoria não encontrada' });
     return res.status(200).json({ message: 'Categoria removida com sucesso' });
   } catch (err) {

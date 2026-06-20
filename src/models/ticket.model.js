@@ -1,6 +1,12 @@
 import mongoose from 'mongoose';
 
 const TicketSchema = new mongoose.Schema({
+  companyId: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'Company',
+    default: null,
+    index: true
+  },
   contactNumber: {
     type: String,
     index: true

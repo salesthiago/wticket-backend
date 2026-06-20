@@ -1,6 +1,12 @@
 import mongoose from 'mongoose';
 
 const TicketStatusSchema = new mongoose.Schema({
+  companyId: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'Company',
+    default: null,
+    index: true
+  },
   name: {
     type: String,
     required: true,
@@ -31,11 +37,11 @@ const TicketStatusSchema = new mongoose.Schema({
   timestamps: true
 });
 
-// Garante que só um status seja o padrão por vez
+// Garante que só um status seja o padrão por vez dentro da mesma empresa
 TicketStatusSchema.pre('save', async function (next) {
   if (this.isDefault && this.isModified('isDefault')) {
     await this.constructor.updateMany(
-      { _id: { $ne: this._id } },
+      { _id: { $ne: this._id }, companyId: this.companyId ?? null },
       { $set: { isDefault: false } }
     );
   }
