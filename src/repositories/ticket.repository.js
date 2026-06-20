@@ -1,6 +1,9 @@
 import Ticket from '../models/ticket.model.js';
 import logger from '../utils/logger.js';
 
+// Note: companyId is optional in many methods because the message-processor
+// service still creates/updates tickets without tenant context.
+// TODO: make services tenant-aware and tighten these signatures.
 class TicketRepository {
   async create(ticketData) {
     try {
@@ -11,9 +14,11 @@ class TicketRepository {
     }
   }
 
-  async findById(id) {
+  async findById(id, { companyId } = {}) {
     try {
-      return await Ticket.findById(id)
+      const query = { _id: id };
+      if (companyId) query.companyId = companyId;
+      return await Ticket.findOne(query)
         .populate('assignedTo', 'name email')
         .populate('categoryId', 'name color')
         .populate('subjectId', 'name')
@@ -90,7 +95,7 @@ class TicketRepository {
     }
   }
 
-  async assignTicket(id, userId) {
+  async assignTicket(id, userId, { companyId } = {}) {
     try {
       return await Ticket.findByIdAndUpdate(
         id,
@@ -134,6 +139,8 @@ class TicketRepository {
 
   async getTicketsStats() {
     try {
+      const match = { sessionName };
+      if (companyId) match.companyId = companyId;
       return await Ticket.aggregate([
         {
           $group: {
@@ -148,9 +155,11 @@ class TicketRepository {
     }
   }
 
-  async deleteTicket(id) {
+  async deleteTicket(id, { companyId } = {}) {
     try {
-      return await Ticket.findByIdAndDelete(id);
+      const filter = { _id: id };
+      if (companyId) filter.companyId = companyId;
+      return await Ticket.findOneAndDelete(filter);
     } catch (error) {
       logger.error('Erro ao deletar: ', error);
       throw new Error('Erro ao deletar ticket: ' + error.message);

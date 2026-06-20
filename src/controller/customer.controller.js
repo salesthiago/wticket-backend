@@ -3,9 +3,10 @@ import customerRepository from '../repositories/customer.repository.js';
 
 export const findAll = async (req, res) => {
   try {
+    const companyId = req.user.companyId;
     const { search, page, limit } = req.query;
 
-    const result = await customerRepository.findAll({
+    const result = await customerRepository.findAll(companyId, {
       search,
       page: page ? parseInt(page) - 1 : 0,
       limit: limit ? parseInt(limit) : 10
@@ -20,12 +21,11 @@ export const findAll = async (req, res) => {
 
 export const findById = async (req, res) => {
   try {
+    const companyId = req.user.companyId;
     const { id } = req.params;
 
-    const customer = await customerRepository.findById(id);
-    if (!customer) {
-      return res.status(404).json({ message: 'Customer not found' });
-    }
+    const customer = await customerRepository.findById(companyId, id);
+    if (!customer) return res.status(404).json({ message: 'Customer not found' });
 
     return res.status(200).json(customer);
   } catch (err) {
@@ -36,6 +36,7 @@ export const findById = async (req, res) => {
 
 export const create = async (req, res) => {
   try {
+    const companyId = req.user.companyId;
     const { name, phone, email, documentType, document, address } = req.body;
 
     if (!name || !phone) {
@@ -43,13 +44,14 @@ export const create = async (req, res) => {
     }
 
     if (document) {
-      const existing = await customerRepository.findByDocument(document);
+      const existing = await customerRepository.findByDocument(companyId, document);
       if (existing) {
         return res.status(409).json({ message: 'A customer with this document already exists' });
       }
     }
 
     const customer = await customerRepository.create({
+      companyId,
       name,
       phone,
       email,
@@ -68,6 +70,7 @@ export const create = async (req, res) => {
 
 export const update = async (req, res) => {
   try {
+    const companyId = req.user.companyId;
     const { id } = req.params;
     const body = req.body;
 
@@ -75,10 +78,8 @@ export const update = async (req, res) => {
       return res.status(422).json({ message: 'Body is empty' });
     }
 
-    const customer = await customerRepository.update(id, body);
-    if (!customer) {
-      return res.status(404).json({ message: 'Customer not found' });
-    }
+    const customer = await customerRepository.update(companyId, id, body);
+    if (!customer) return res.status(404).json({ message: 'Customer not found' });
 
     return res.status(200).json(customer);
   } catch (err) {
@@ -89,12 +90,11 @@ export const update = async (req, res) => {
 
 export const destroy = async (req, res) => {
   try {
+    const companyId = req.user.companyId;
     const { id } = req.params;
 
-    const customer = await customerRepository.softDelete(id);
-    if (!customer) {
-      return res.status(404).json({ message: 'Customer not found' });
-    }
+    const customer = await customerRepository.softDelete(companyId, id);
+    if (!customer) return res.status(404).json({ message: 'Customer not found' });
 
     return res.status(200).json({ message: 'Customer deleted successfully' });
   } catch (err) {

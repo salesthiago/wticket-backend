@@ -105,9 +105,9 @@ const appointmentSchema = new mongoose.Schema({
 });
 
 // Índices para performance
-appointmentSchema.index({ phone: 1, status: 1 });
-appointmentSchema.index({ scheduledDate: 1, status: 1 });
-appointmentSchema.index({ contactId: 1, status: 1 });
+appointmentSchema.index({ companyId: 1, phone: 1, status: 1 });
+appointmentSchema.index({ companyId: 1, scheduledDate: 1, status: 1 });
+appointmentSchema.index({ companyId: 1, contactId: 1, status: 1 });
 
 // Middleware para calcular scheduledDateTime
 appointmentSchema.pre('save', function(next) {

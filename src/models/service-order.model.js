@@ -11,8 +11,25 @@ const PartSchema = new mongoose.Schema({
   name: { type: String, required: true, trim: true },
   quantity: { type: Number, required: true, default: 1, min: 1 },
   unitPrice: { type: Number, required: true, min: 0 },
-  total: { type: Number, required: true, min: 0 }
+  total: { type: Number, required: true, min: 0 },
+  // Vínculo opcional com o catálogo de produtos (peça pode ser texto livre)
+  productId: { type: mongoose.Schema.Types.ObjectId, ref: 'Product' },
+  // Quanto desta peça já foi baixado do estoque (controle de reconciliação)
+  deductedQuantity: { type: Number, default: 0, min: 0 }
 }, { _id: false });
+
+// Foto anexada à OS (ex.: estado do veículo na entrada). Armazenada no S3 da
+// empresa quando configurado, com fallback para disco local (/uploads).
+const PhotoSchema = new mongoose.Schema({
+  url: { type: String, required: true, trim: true },
+  storageKey: { type: String, trim: true },
+  storageBucket: { type: String, trim: true },
+  storageSource: { type: String, enum: ['company', 'default', 'local'], default: 'local' },
+  filename: { type: String, trim: true },
+  mimetype: { type: String, trim: true },
+  size: { type: Number },
+  order: { type: Number, default: 0 }
+}, { timestamps: true });
 
 const StatusHistorySchema = new mongoose.Schema({
   status: { type: String, required: true },
@@ -22,10 +39,15 @@ const StatusHistorySchema = new mongoose.Schema({
 }, { _id: false });
 
 const ServiceOrderSchema = new mongoose.Schema({
-  // Numero sequencial da OS
+  companyId: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'Company',
+    required: true,
+    index: true
+  },
+  // Numero sequencial da OS (unique per company)
   orderNumber: {
     type: String,
-    unique: true,
     index: true
   },
 
@@ -37,15 +59,27 @@ const ServiceOrderSchema = new mongoose.Schema({
     index: true
   },
 
-  // Equipamento
+  // Veículo (oficina) — referência opcional ao veículo do cliente
+  vehicleId: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'Vehicle',
+    index: true
+  },
+
+  // Equipamento (na oficina: o automóvel)
   equipment: {
-    type: { type: String, required: true, trim: true },       // ex: Notebook, Celular, Impressora
-    brand: { type: String, trim: true },                       // ex: Dell, Samsung
-    model: { type: String, trim: true },                       // ex: Inspiron 15
-    serialNumber: { type: String, trim: true },
+    type: { type: String, required: true, trim: true },       // ex: Notebook, Celular | oficina: 'automovel'
+    brand: { type: String, trim: true },                       // ex: Dell | oficina: marca do veículo
+    model: { type: String, trim: true },                       // ex: Inspiron 15 | oficina: modelo do veículo
+    plate: { type: String, trim: true, uppercase: true },      // Placa (oficina)
+    mileage: { type: Number, min: 0 },                         // KM informado na OS (oficina)
+    serialNumber: { type: String, trim: true },                // oficina: chassi, se desejado
     accessories: { type: String, trim: true },                 // ex: Carregador, Cabo USB
     condition: { type: String, trim: true }                    // Estado fisico na entrada
   },
+
+  // Fotos anexadas à OS (oficina: fotos do carro)
+  photos: [PhotoSchema],
 
   // Problema
   reportedIssue: {
@@ -159,17 +193,21 @@ const ServiceOrderSchema = new mongoose.Schema({
 });
 
 // Indexes
-ServiceOrderSchema.index({ isActive: 1, createdAt: -1 });
-ServiceOrderSchema.index({ customerId: 1, status: 1 });
-ServiceOrderSchema.index({ technicianId: 1, status: 1 });
+ServiceOrderSchema.index({ companyId: 1, isActive: 1, createdAt: -1 });
+ServiceOrderSchema.index({ companyId: 1, customerId: 1, status: 1 });
+ServiceOrderSchema.index({ companyId: 1, technicianId: 1, status: 1 });
+ServiceOrderSchema.index({ companyId: 1, orderNumber: 1 }, { unique: true, sparse: true });
 ServiceOrderSchema.index({ 'equipment.serialNumber': 1 }, { sparse: true });
 
-// Gerar numero sequencial da OS antes de salvar
+// Gerar numero sequencial da OS antes de salvar (sequencia por empresa)
 ServiceOrderSchema.pre('save', async function (next) {
   if (this.isNew && !this.orderNumber) {
     const year = new Date().getFullYear();
     const lastOrder = await mongoose.model('ServiceOrder')
-      .findOne({ orderNumber: { $regex: `^OS-${year}` } })
+      .findOne({
+        companyId: this.companyId,
+        orderNumber: { $regex: `^OS-${year}` }
+      })
       .sort({ orderNumber: -1 })
       .lean();
 

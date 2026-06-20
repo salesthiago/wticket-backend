@@ -7,6 +7,12 @@ const DadosProdutoSchema = new mongoose.Schema({
 }, { _id: false });
 
 const AiAgentSchema = new mongoose.Schema({
+  companyId: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'Company',
+    required: true,
+    index: true
+  },
   nome: { type: String, required: true, trim: true },
   descricao: { type: String, trim: true },
   tipo: {
@@ -30,7 +36,7 @@ const AiAgentSchema = new mongoose.Schema({
   totalGeracoes: { type: Number, default: 0 }
 }, { timestamps: true });
 
-AiAgentSchema.index({ tipo: 1, status: 1 });
-AiAgentSchema.index({ createdAt: -1 });
+AiAgentSchema.index({ companyId: 1, tipo: 1, status: 1 });
+AiAgentSchema.index({ companyId: 1, createdAt: -1 });
 
 export default mongoose.model('AiAgent', AiAgentSchema);

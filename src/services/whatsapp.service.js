@@ -6,6 +6,7 @@ import syncService from "../services/sync.service.js";
 import botConfigRepository from "../repositories/bot-config.repository.js";
 import botAgendaService from "./bot-agenda.service.js";
 import aiWhatsappService from "./ai-whatsapp.service.js";
+import aiAgentService from "./ai-agent.service.js";
 import fs from "fs";
 import path from "path";
 
@@ -128,7 +129,9 @@ class WhatsAppService {
     }
   }
 
-  async createSession(sessionName, isReconnect = false) {
+  // TODO: multi-tenant — sessionName is only globally unique per (companyId, name).
+  // findByName/updateOrCreate by name alone may be ambiguous across companies.
+  async createSession(sessionName, isReconnect = false, companyId = null) {
     try {
       logger.info(
         `━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━`
@@ -140,13 +143,15 @@ class WhatsAppService {
         `━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━`
       );
 
-      // ✅ SEMPRE usar o nome real
-      logger.debug(`[${sessionName}] Atualizando status no banco de dados para 'initializing'`);
-      await sessionRepository.updateOrCreate(sessionName, {
+      const upsertData = {
         name: sessionName,
         status: "initializing",
         lastActivity: new Date(),
-      });
+      };
+      if (companyId) upsertData.companyId = companyId;
+
+      logger.debug(`[${sessionName}] Atualizando status no banco de dados para 'initializing'`);
+      await sessionRepository.updateOrCreate(sessionName, upsertData);
       logger.debug(`[${sessionName}] Status atualizado no banco de dados com sucesso`);
 
       logger.debug(`[${sessionName}] Adicionando sessão ao mapa de memória`);
@@ -509,7 +514,8 @@ class WhatsAppService {
             status: 'in_progress',
             subject: `Atendimento Automatizado`,
             priority: 'medium',
-            botHandled: true
+            botHandled: true,
+            origin: 'bot'
           });
           logger.info(`📋 Ticket criado: ${ticket._id} - Status: in_progress (bot atendendo)`);
         } else if (ticket.status === 'opened' || ticket.status === 'finished') {
@@ -594,6 +600,15 @@ class WhatsAppService {
         let ticket = await ticketRepository.findByContact(sessionName, contactNumber);
 
         if (!ticket) {
+          // Identifica qual IA está atendendo para registrar na origem do ticket
+          let aiOrigin = 'gpt';
+          try {
+            const activeProvider = await aiAgentService.getActiveProvider();
+            aiOrigin = activeProvider === 'openai' ? 'gpt' : activeProvider;
+          } catch (e) {
+            logger.warn(`Não foi possível identificar o provedor de IA para origem do ticket: ${e.message}`);
+          }
+
           ticket = await ticketRepository.create({
             contactNumber,
             contactName,
@@ -602,7 +617,8 @@ class WhatsAppService {
             subject: 'Atendimento IA',
             priority: 'medium',
             aiHandled: true,
-            aiAgentId: session.aiAgentId
+            aiAgentId: session.aiAgentId,
+            origin: aiOrigin
           });
           logger.info(`📋 Ticket IA criado: ${ticket._id}`);
         } else if (ticket.status === 'opened' || ticket.status === 'finished') {

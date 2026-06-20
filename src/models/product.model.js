@@ -1,6 +1,12 @@
 import mongoose from 'mongoose';
 
 const ProductSchema = new mongoose.Schema({
+  companyId: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'Company',
+    required: true,
+    index: true
+  },
   name: {
     type: String,
     required: true,
@@ -10,12 +16,19 @@ const ProductSchema = new mongoose.Schema({
   sku: {
     type: String,
     required: true,
-    unique: true,
     uppercase: true,
     trim: true,
     index: true
   },
   ncmCode: {
+    type: String,
+    trim: true
+  },
+  brand: {
+    type: String,
+    trim: true
+  },
+  model: {
     type: String,
     trim: true
   },
@@ -51,6 +64,10 @@ const ProductSchema = new mongoose.Schema({
     type: Boolean,
     default: false
   },
+  service: {
+    type: Boolean,
+    default: false
+  },
   trackStock: {
     type: Boolean,
     default: true
@@ -64,7 +81,7 @@ const ProductSchema = new mongoose.Schema({
 });
 
 ProductSchema.index({ name: 'text', description: 'text' });
-ProductSchema.index({ sku: 1 });
-ProductSchema.index({ isActive: 1, createdAt: -1 });
+ProductSchema.index({ companyId: 1, sku: 1 }, { unique: true });
+ProductSchema.index({ companyId: 1, isActive: 1, createdAt: -1 });
 
 export default mongoose.model('Product', ProductSchema);

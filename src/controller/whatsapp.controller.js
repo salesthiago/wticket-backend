@@ -4,24 +4,20 @@ import logger from "../utils/logger.js";
 
 export const createSession = async (req, res) => {
   try {
+    const companyId = req.user.companyId;
     const { name } = req.body;
-    logger.info(`🌐 [API] Requisição para criar sessão: ${name}`);
+    logger.info(`🌐 [API] Requisição para criar sessão: ${name} (company ${companyId})`);
 
     if (!name) {
-      logger.warn(`🌐 [API] Tentativa de criar sessão sem nome`);
-      return res.status(400).json({
-        error: "Nome da sessão é obrigatório",
-      });
+      return res.status(400).json({ error: "Nome da sessão é obrigatório" });
     }
 
-    logger.debug(`🌐 [API] Chamando whatsappService.createSession(${name})`);
-    const result = whatsappService.createSession(name);
+    const result = whatsappService.createSession(name, false, companyId);
 
-    logger.info(`🌐 [API] ✅ Sessão ${name} criada com sucesso`);
     return res.json({
       success: true,
       message: "Sessão criada com sucesso",
-      session: result.session,
+      session: result?.session,
     });
   } catch (error) {
     logger.error(`🌐 [API] ❌ Erro ao criar sessão:`, error);
@@ -136,14 +132,12 @@ export const closeSession = async (req, res) => {
 
 export const listSessions = async (req, res) => {
   try {
-    console.log("controller >>> listSessions");
-    const sessions = await whatsappService.getAllSessions();
+    const companyId = req.user.companyId;
+    const sessions = await sessionRepository.findAll({ companyId });
     return res.json(sessions);
   } catch (error) {
     logger.error("Erro ao listar sessões:", error);
-    res.status(500).json({
-      error: "Erro interno ao listar sessões",
-    });
+    res.status(500).json({ error: "Erro interno ao listar sessões" });
   }
 };
 
@@ -201,16 +195,12 @@ export const syncStatus = async (req, res) => {
 
 export const updateSession = async (req, res) => {
   try {
+    const companyId = req.user.companyId;
     const { sessionName } = req.params;
     const updateData = req.body;
 
-    if (!sessionName) {
-      return res.status(400).json({
-        error: "sessionName é obrigatório",
-      });
-    }
+    if (!sessionName) return res.status(400).json({ error: "sessionName é obrigatório" });
 
-    // Campos permitidos para atualização
     const allowedFields = [
       'initiationMessage',
       'initiationKeyword',
@@ -219,30 +209,19 @@ export const updateSession = async (req, res) => {
       'aiAgentId'
     ];
 
-    // Filtra apenas os campos permitidos
     const filteredData = {};
     for (const field of allowedFields) {
-      if (updateData[field] !== undefined) {
-        filteredData[field] = updateData[field];
-      }
+      if (updateData[field] !== undefined) filteredData[field] = updateData[field];
     }
 
     if (Object.keys(filteredData).length === 0) {
-      return res.status(400).json({
-        error: "Nenhum campo válido para atualização",
-        allowedFields
-      });
+      return res.status(400).json({ error: "Nenhum campo válido para atualização", allowedFields });
     }
 
-    const updatedSession = await sessionRepository.updateByName(sessionName, filteredData);
+    const updatedSession = await sessionRepository.updateByName(sessionName, filteredData, { companyId });
 
-    if (!updatedSession) {
-      return res.status(404).json({
-        error: "Sessão não encontrada",
-      });
-    }
+    if (!updatedSession) return res.status(404).json({ error: "Sessão não encontrada" });
 
-    logger.info(`Sessão ${sessionName} atualizada com sucesso`);
     return res.json({
       success: true,
       message: "Sessão atualizada com sucesso",
@@ -250,17 +229,15 @@ export const updateSession = async (req, res) => {
     });
   } catch (error) {
     logger.error("Erro ao atualizar sessão:", error);
-    res.status(500).json({
-      error: "Erro interno ao atualizar sessão",
-      details: error.message
-    });
+    res.status(500).json({ error: "Erro interno ao atualizar sessão", details: error.message });
   }
 };
 
 export const getSessionProducts = async (req, res) => {
   try {
+    const companyId = req.user.companyId;
     const { sessionName } = req.params;
-    const products = await sessionRepository.getProducts(sessionName);
+    const products = await sessionRepository.getProducts(sessionName, { companyId });
     return res.json(products);
   } catch (error) {
     logger.error('Erro ao buscar produtos da sessão:', error);
@@ -270,10 +247,11 @@ export const getSessionProducts = async (req, res) => {
 
 export const addSessionProduct = async (req, res) => {
   try {
+    const companyId = req.user.companyId;
     const { sessionName } = req.params;
     const { productId } = req.body;
     if (!productId) return res.status(422).json({ error: 'productId é obrigatório' });
-    const session = await sessionRepository.addProduct(sessionName, productId);
+    const session = await sessionRepository.addProduct(sessionName, productId, { companyId });
     return res.json(session?.products || []);
   } catch (error) {
     logger.error('Erro ao adicionar produto à sessão:', error);
@@ -283,8 +261,9 @@ export const addSessionProduct = async (req, res) => {
 
 export const removeSessionProduct = async (req, res) => {
   try {
+    const companyId = req.user.companyId;
     const { sessionName, productId } = req.params;
-    const session = await sessionRepository.removeProduct(sessionName, productId);
+    const session = await sessionRepository.removeProduct(sessionName, productId, { companyId });
     return res.json(session?.products || []);
   } catch (error) {
     logger.error('Erro ao remover produto da sessão:', error);
@@ -294,28 +273,19 @@ export const removeSessionProduct = async (req, res) => {
 
 export const getSession = async (req, res) => {
   try {
+    const companyId = req.user.companyId;
     const { sessionName } = req.params;
 
-    if (!sessionName) {
-      return res.status(400).json({
-        error: "sessionName é obrigatório",
-      });
-    }
+    if (!sessionName) return res.status(400).json({ error: "sessionName é obrigatório" });
 
-    const session = await sessionRepository.findByName(sessionName);
+    const session = await sessionRepository.findByName(sessionName, { companyId });
 
-    if (!session) {
-      return res.status(404).json({
-        error: "Sessão não encontrada",
-      });
-    }
+    if (!session) return res.status(404).json({ error: "Sessão não encontrada" });
 
     await session.populate('aiAgentId', 'nome tipo status');
     return res.json(session);
   } catch (error) {
     logger.error("Erro ao buscar sessão:", error);
-    res.status(500).json({
-      error: "Erro interno ao buscar sessão",
-    });
+    res.status(500).json({ error: "Erro interno ao buscar sessão" });
   }
 };

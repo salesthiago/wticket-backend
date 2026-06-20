@@ -1,35 +1,32 @@
 import Contact from "../models/contact.model.js";
 
 class ContactRepository {
-  async create(sessionData) {
+  // companyId is optional here because whatsapp ingestion services still
+  // create contacts without a tenant context (TODO: tenant-aware services).
+  async create(contactData) {
     try {
-      const contact = new Contact(sessionData);
-      contact.name = name;
-      if (email) {
-        contact.email = email;
-      }
-      contact.phone = onlyNumbers(phone);
-      contact.status = status;
-      if (avatar) {
-        contact.avatar = avatar;
-      }
-
+      const contact = new Contact(contactData);
       return await contact.save();
     } catch (error) {
       throw new Error(`Erro ao criar contato: ${error.message}`);
     }
   }
 
-  async findById(id) {
+  async findById(id, { companyId } = {}) {
     try {
-      return await Contact.findById(id);
+      const query = { _id: id };
+      if (companyId) query.companyId = companyId;
+      return await Contact.findOne(query);
     } catch (error) {
       throw new Error(`Erro ao buscar contato: ${error.message}`);
     }
   }
-  async findByNumber(_phone) {
+
+  async findByNumber(_phone, { companyId } = {}) {
     try {
-      return await Contact.findOne({ phone: _phone });
+      const query = { phone: _phone };
+      if (companyId) query.companyId = companyId;
+      return await Contact.findOne(query);
     } catch (error) {
       throw new Error(`Erro ao buscar contato: ${error.message}`);
     }
@@ -37,20 +34,23 @@ class ContactRepository {
 
   async updateOrCreate(number, data) {
     try {
+      const filter = { sessionName: data.sessionName, phone: number };
+      if (data.companyId) filter.companyId = data.companyId;
       return await Contact.findOneAndUpdate(
-        { sessionName: data.sessionName, phone: number },
+        filter,
         { $set: { ...data } },
         { new: true, upsert: true }
       );
     } catch (error) {
-      //throw new Error(`Erro ao atualizar/criar contato: ${error.message}`);
-      throw error ;
+      throw error;
     }
   }
 
-  async findAll({ query, page, rowsPerPage }) {
+  async findAll({ query = {}, page = 0, rowsPerPage = 10, companyId } = {}) {
     try {
-      return await Contact.find(query)
+      const finalQuery = { ...query };
+      if (companyId) finalQuery.companyId = companyId;
+      return await Contact.find(finalQuery)
         .limit(rowsPerPage)
         .skip(rowsPerPage * page);
     } catch (error) {
@@ -58,16 +58,25 @@ class ContactRepository {
     }
   }
 
-  async update(id, data) {
+  async update(id, data, { companyId } = {}) {
     try {
+      const filter = { _id: id };
+      if (companyId) filter.companyId = companyId;
+      const patch = { ...data };
+      delete patch.companyId;
       return await Contact.findOneAndUpdate(
-        { _id: id },
-        { $set: { ...data } },
+        filter,
+        { $set: patch },
         { new: true }
       );
     } catch (error) {
       throw new Error(`Erro ao atualizar contato: ${error.message}`);
     }
+  }
+
+  async destroy(companyId, id) {
+    if (!companyId) throw new Error('companyId is required');
+    return await Contact.findOneAndDelete({ _id: id, companyId });
   }
 }
 

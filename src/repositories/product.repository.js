@@ -4,145 +4,132 @@ import logger from '../utils/logger.js';
 
 class ProductRepository {
   async create(data) {
-    try {
-      const product = new Product(data);
-      return await product.save();
-    } catch (error) {
-      throw new Error(error.message);
-    }
+    if (!data.companyId) throw new Error('companyId is required');
+    const product = new Product(data);
+    return await product.save();
   }
 
-  async findAll({ search, isActive, page = 0, limit = 10 } = {}) {
-    try {
-      const query = {};
+  async findAll(companyId, { search, isActive, service, page = 0, limit = 10 } = {}) {
+    if (!companyId) throw new Error('companyId is required');
+    const query = { companyId };
 
-      if (typeof isActive === 'boolean') {
-        query.isActive = isActive;
-      }
-
-      if (search) {
-        query.$or = [
-          { name: { $regex: search, $options: 'i' } },
-          { sku: { $regex: search, $options: 'i' } },
-          { ncmCode: { $regex: search, $options: 'i' } }
-        ];
-      }
-
-      const [records, total] = await Promise.all([
-        Product.find(query)
-          .populate('mainImage')
-          .sort({ createdAt: -1 })
-          .skip(page * limit)
-          .limit(limit)
-          .exec(),
-        Product.countDocuments(query)
-      ]);
-
-      return { records, total, page, limit };
-    } catch (error) {
-      throw new Error(error.message);
+    if (typeof isActive === 'boolean') {
+      query.isActive = isActive;
     }
-  }
 
-  async findById(id) {
-    try {
-      return await Product.findById(id)
+    if (typeof service === 'boolean') {
+      // service=true → apenas serviços; service=false → apenas produtos/peças
+      query.service = service ? true : { $ne: true };
+    }
+
+    if (search) {
+      query.$or = [
+        { name: { $regex: search, $options: 'i' } },
+        { sku: { $regex: search, $options: 'i' } },
+        { ncmCode: { $regex: search, $options: 'i' } }
+      ];
+    }
+
+    const [records, total] = await Promise.all([
+      Product.find(query)
         .populate('mainImage')
-        .populate('images');
-    } catch (error) {
-      throw new Error(error.message);
-    }
+        .sort({ createdAt: -1 })
+        .skip(page * limit)
+        .limit(limit)
+        .exec(),
+      Product.countDocuments(query)
+    ]);
+
+    return { records, total, page, limit };
   }
 
-  async findBySku(sku) {
-    try {
-      return await Product.findOne({ sku: sku.toUpperCase() });
-    } catch (error) {
-      throw new Error(error.message);
-    }
+  async findById(companyId, id) {
+    if (!companyId) throw new Error('companyId is required');
+    return await Product.findOne({ _id: id, companyId })
+      .populate('mainImage')
+      .populate('images');
   }
 
-  async update(id, data) {
-    try {
-      return await Product.findByIdAndUpdate(
-        id,
-        { $set: data },
-        { new: true }
-      ).populate('mainImage').populate('images');
-    } catch (error) {
-      throw new Error(error.message);
-    }
+  async findBySku(companyId, sku) {
+    if (!companyId) throw new Error('companyId is required');
+    return await Product.findOne({ companyId, sku: sku.toUpperCase() });
   }
 
-  async updateStock(id, quantity) {
-    try {
-      return await Product.findByIdAndUpdate(
-        id,
-        { $inc: { stock: quantity } },
-        { new: true }
-      );
-    } catch (error) {
-      throw new Error(error.message);
-    }
+  async update(companyId, id, data) {
+    if (!companyId) throw new Error('companyId is required');
+    const patch = { ...data };
+    delete patch.companyId;
+    return await Product.findOneAndUpdate(
+      { _id: id, companyId },
+      { $set: patch },
+      { new: true }
+    ).populate('mainImage').populate('images');
   }
 
-  async delete(id) {
+  async updateStock(companyId, id, quantity) {
+    if (!companyId) throw new Error('companyId is required');
+    return await Product.findOneAndUpdate(
+      { _id: id, companyId },
+      { $inc: { stock: quantity } },
+      { new: true }
+    );
+  }
+
+  async delete(companyId, id) {
+    if (!companyId) throw new Error('companyId is required');
     try {
-      return await Product.findByIdAndDelete(id);
+      return await Product.findOneAndDelete({ _id: id, companyId });
     } catch (error) {
       logger.error('ProductRepository :: delete >> ', error);
-      throw new Error(error.message);
+      throw error;
     }
   }
 
   // Product Images
   async addImage(imageData) {
-    try {
-      const image = new ProductImage(imageData);
-      const saved = await image.save();
-      await Product.findByIdAndUpdate(
-        imageData.product,
-        { $push: { images: saved._id } }
-      );
-      return saved;
-    } catch (error) {
-      throw new Error(error.message);
-    }
+    if (!imageData.companyId) throw new Error('companyId is required');
+    const image = new ProductImage(imageData);
+    const saved = await image.save();
+    await Product.findOneAndUpdate(
+      { _id: imageData.product, companyId: imageData.companyId },
+      { $push: { images: saved._id } }
+    );
+    return saved;
   }
 
-  async setMainImage(productId, imageId) {
-    try {
-      return await Product.findByIdAndUpdate(
-        productId,
-        { $set: { mainImage: imageId } },
-        { new: true }
-      ).populate('mainImage');
-    } catch (error) {
-      throw new Error(error.message);
-    }
+  async setMainImage(companyId, productId, imageId) {
+    if (!companyId) throw new Error('companyId is required');
+    return await Product.findOneAndUpdate(
+      { _id: productId, companyId },
+      { $set: { mainImage: imageId } },
+      { new: true }
+    ).populate('mainImage');
   }
 
-  async findImagesByProduct(productId) {
-    try {
-      return await ProductImage.find({ product: productId }).sort({ order: 1 });
-    } catch (error) {
-      throw new Error(error.message);
-    }
+  async findImagesByProduct(companyId, productId) {
+    if (!companyId) throw new Error('companyId is required');
+    return await ProductImage.find({ companyId, product: productId }).sort({ order: 1 });
   }
 
-  async deleteImage(imageId) {
+  async findImageById(companyId, imageId) {
+    if (!companyId) throw new Error('companyId is required');
+    return await ProductImage.findOne({ _id: imageId, companyId });
+  }
+
+  async deleteImage(companyId, imageId) {
+    if (!companyId) throw new Error('companyId is required');
     try {
-      const image = await ProductImage.findByIdAndDelete(imageId);
+      const image = await ProductImage.findOneAndDelete({ _id: imageId, companyId });
       if (image) {
-        await Product.findByIdAndUpdate(
-          image.product,
+        await Product.findOneAndUpdate(
+          { _id: image.product, companyId },
           { $pull: { images: imageId } }
         );
       }
       return image;
     } catch (error) {
       logger.error('ProductRepository :: deleteImage >> ', error);
-      throw new Error(error.message);
+      throw error;
     }
   }
 }

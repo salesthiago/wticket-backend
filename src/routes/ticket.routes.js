@@ -1,5 +1,5 @@
-import * as ticketController from '../controller/ticket.controller.js'
-import { authenticate } from "../middleware/auth.middleware.js";
+import * as ticketController from '../controller/ticket.controller.js';
+import { authenticate, requireTenant, requireModule } from '../middleware/auth.middleware.js';
 import { Router } from 'express';
 
 const router = Router();

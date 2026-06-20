@@ -16,7 +16,10 @@ const app = express();
 // Configuração CORS dinâmica para aceitar múltiplas origens
 const allowedOrigins = [
   'http://localhost:4200',
-  'https://wticket.godprovider.com.br',
+  'http://localhost:4300',
+  'https://wticket.com.br',
+  'https://app.wticket.com.br',
+  'https://oficina.wticket.com.br',
   process.env.FRONTEND_URL
 ].filter(Boolean); // Remove valores undefined/null
 
@@ -39,7 +42,8 @@ app.use(cors({
   maxAge: 600 // Cache preflight por 10 minutos
 }));
 
-app.use(express.json());
+// Guarda o corpo raw (usado p/ validar a assinatura HMAC dos webhooks AbacatePay).
+app.use(express.json({ verify: (req, _res, buf) => { req.rawBody = buf; } }));
 app.use(express.urlencoded({ extended: true }));
 app.use(cookieParser());
 

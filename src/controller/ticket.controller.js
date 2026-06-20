@@ -42,8 +42,46 @@ export const create = async (req, res) => {
   }
 };
 
+export const create = async (req, res) => {
+  try {
+    const companyId = req.user.companyId;
+    const {
+      contactNumber,
+      contactName,
+      sessionName,
+      subject,
+      priority,
+      category,
+      origin,
+      notes
+    } = req.body;
+
+    if (!contactNumber) return res.status(422).json({ message: 'contactNumber is required' });
+    if (!sessionName) return res.status(422).json({ message: 'sessionName is required' });
+
+    const ticket = await ticketRepository.create({
+      companyId,
+      contactNumber,
+      contactName,
+      sessionName,
+      subject: subject || 'Atendimento',
+      priority: priority || 'medium',
+      category: category || 'support',
+      origin: origin || 'manual',
+      notes,
+      status: 'opened'
+    });
+
+    return res.status(201).json(ticket);
+  } catch (err) {
+    logger.error('ticket create error', err);
+    return res.status(500).json({ message: 'Internal server error' });
+  }
+};
+
 export const updateSaleItems = async (req, res) => {
   try {
+    const companyId = req.user.companyId;
     const { id } = req.params;
     const { saleItems, categoryId } = req.body;
     if (!id) return res.status(422).json({ message: 'ID not found' });
@@ -52,7 +90,7 @@ export const updateSaleItems = async (req, res) => {
     if (saleItems !== undefined) data.saleItems = saleItems;
     if (categoryId !== undefined) data.categoryId = categoryId;
 
-    const updated = await ticketRepository.update(id, data);
+    const updated = await ticketRepository.update(id, data, { companyId });
     return res.status(200).json(updated);
   } catch (err) {
     logger.error('updateSaleItems error >>> ', err);
@@ -62,6 +100,7 @@ export const updateSaleItems = async (req, res) => {
 
 export const findById = async (req, res) => {
   try {
+    const companyId = req.user.companyId;
     const { id } = req.params;
     if (!id) return res.status(422).json({ message: "ID not found" });
     const ticket = await ticketRepository.findById(id);
@@ -105,6 +144,7 @@ export const addResponse = async (req, res) => {
 
 export const update = async (req, res) => {
   try {
+    const companyId = req.user.companyId;
     const { id } = req.params;
     if (!id) return res.status(422).json({ message: "ID not found" });
     if (!req.body) return res.status(422).json({ message: "Body is empty" });
@@ -118,6 +158,7 @@ export const update = async (req, res) => {
 
 export const destroy = async (req, res) => {
   try {
+    const companyId = req.user.companyId;
     const { id } = req.params;
     if (!id) return res.status(422).json({ message: "ID not found" });
     const ticket = await ticketRepository.deleteTicket(id);

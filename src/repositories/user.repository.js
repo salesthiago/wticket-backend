@@ -4,7 +4,7 @@ import bcrypt from 'bcrypt';
 const SALT_ROUNDS = 10;
 
 class UserRepository {
-  async create({ name, email, role, password, status }) {
+  async create({ name, email, role, password, status, companyId }) {
     try {
       const userCreated = new User();
       userCreated.name = name;
@@ -12,6 +12,7 @@ class UserRepository {
       userCreated.role = role;
       userCreated.status = status;
       userCreated.password = password;
+      if (companyId) userCreated.companyId = companyId;
 
       return await userCreated.save();
     } catch (error) {
@@ -19,46 +20,57 @@ class UserRepository {
     }
   }
 
-  async findById(id) {
+  async findById(id, { companyId } = {}) {
     try {
-      return await User.findById(id);
+      const query = { _id: id };
+      if (companyId) query.companyId = companyId;
+      return await User.findOne(query);
     } catch (error) {
       throw new Error('Erro ao buscar usuario: ' + error.message);
     }
   }
 
-  async findAll({ query, page, rowsPerPage }) {
+  async findAll({ query = {}, page = 0, rowsPerPage = 10, companyId } = {}) {
     try {
-      return await User.find(query)
+      const finalQuery = { ...query };
+      if (companyId) finalQuery.companyId = companyId;
+      return await User.find(finalQuery)
         .limit(rowsPerPage)
         .skip(rowsPerPage * page);
     } catch (error) {
-      throw new Error('Erro ao buscar usuario: '+ error.message);
+      throw new Error('Erro ao buscar usuario: ' + error.message);
     }
   }
 
-  async update(id, data) {
+  async update(id, data, { companyId } = {}) {
     try {
-      // Se a senha foi fornecida, faz o hash antes de atualizar
       if (data.password) {
         const salt = await bcrypt.genSalt(SALT_ROUNDS);
         data.password = await bcrypt.hash(data.password, salt);
       }
 
+      const filter = { _id: id };
+      if (companyId) filter.companyId = companyId;
+      const patch = { ...data };
+      delete patch.companyId;
+
       return await User.findOneAndUpdate(
-        { _id: id },
-        { $set: { ...data } },
+        filter,
+        { $set: patch },
         { new: true }
       );
     } catch (error) {
-      throw new Error('Erro ao atualizar Usuário: '+ error.message);
+      throw new Error('Erro ao atualizar Usuário: ' + error.message);
     }
   }
-  async destroy(id) {
+
+  async destroy(id, { companyId } = {}) {
     try {
-      return await User.findByIdAndDelete(id);
+      const filter = { _id: id };
+      if (companyId) filter.companyId = companyId;
+      return await User.findOneAndDelete(filter);
     } catch (error) {
-      throw new Error('Erro ao deletar Usuário: '+ error.message);
+      throw new Error('Erro ao deletar Usuário: ' + error.message);
     }
   }
 }

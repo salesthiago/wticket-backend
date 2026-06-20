@@ -1,12 +1,36 @@
+import fs from 'fs';
+import path from 'path';
+import sharp from 'sharp';
 import logger from '../utils/logger.js';
 import serviceOrderRepository from '../repositories/service-order.repository.js';
 import customerRepository from '../repositories/customer.repository.js';
+import vehicleRepository from '../repositories/vehicle.repository.js';
+import companyRepository from '../repositories/company.repository.js';
+import receivableService from '../services/financial/receivable.service.js';
+import stockService from '../services/stock.service.js';
+import * as s3Service from '../services/storage/s3.service.js';
+import { buildServiceOrderPdf } from '../services/service-order-pdf.service.js';
+
+// Atualiza o KM (mileage) do veículo sempre que informado em uma OS.
+// Aceita vehicleId como ObjectId/string ou como documento populado.
+const syncVehicleMileage = async (companyId, vehicleId, mileage) => {
+  const id = vehicleId && typeof vehicleId === 'object' ? (vehicleId._id || vehicleId.id) : vehicleId;
+  if (!id || mileage === undefined || mileage === null || mileage === '') return;
+  const km = Number(mileage);
+  if (Number.isNaN(km) || km < 0) return;
+  try {
+    await vehicleRepository.update(companyId, id, { mileage: km });
+  } catch (err) {
+    logger.warn('ServiceOrderController :: syncVehicleMileage >> ', err?.message);
+  }
+};
 
 export const findAll = async (req, res) => {
   try {
+    const companyId = req.user.companyId;
     const { search, status, priority, technicianId, customerId, page, limit } = req.query;
 
-    const result = await serviceOrderRepository.findAll({
+    const result = await serviceOrderRepository.findAll(companyId, {
       search,
       status,
       priority,
@@ -25,12 +49,11 @@ export const findAll = async (req, res) => {
 
 export const findById = async (req, res) => {
   try {
+    const companyId = req.user.companyId;
     const { id } = req.params;
 
-    const serviceOrder = await serviceOrderRepository.findById(id);
-    if (!serviceOrder) {
-      return res.status(404).json({ message: 'Service order not found' });
-    }
+    const serviceOrder = await serviceOrderRepository.findById(companyId, id);
+    if (!serviceOrder) return res.status(404).json({ message: 'Service order not found' });
 
     return res.status(200).json(serviceOrder);
   } catch (err) {
@@ -41,12 +64,11 @@ export const findById = async (req, res) => {
 
 export const findByOrderNumber = async (req, res) => {
   try {
+    const companyId = req.user.companyId;
     const { orderNumber } = req.params;
 
-    const serviceOrder = await serviceOrderRepository.findByOrderNumber(orderNumber);
-    if (!serviceOrder) {
-      return res.status(404).json({ message: 'Service order not found' });
-    }
+    const serviceOrder = await serviceOrderRepository.findByOrderNumber(companyId, orderNumber);
+    if (!serviceOrder) return res.status(404).json({ message: 'Service order not found' });
 
     return res.status(200).json(serviceOrder);
   } catch (err) {
@@ -57,9 +79,10 @@ export const findByOrderNumber = async (req, res) => {
 
 export const findByCustomer = async (req, res) => {
   try {
+    const companyId = req.user.companyId;
     const { customerId } = req.params;
 
-    const orders = await serviceOrderRepository.findByCustomer(customerId);
+    const orders = await serviceOrderRepository.findByCustomer(companyId, customerId);
     return res.status(200).json(orders);
   } catch (err) {
     logger.error('ServiceOrderController :: findByCustomer >> ', err);
@@ -69,7 +92,8 @@ export const findByCustomer = async (req, res) => {
 
 export const create = async (req, res) => {
   try {
-    const { customerId, equipment, reportedIssue, priority, technicianId, estimatedCompletionDate, internalNotes } = req.body;
+    const companyId = req.user.companyId;
+    const { customerId, vehicleId, equipment, reportedIssue, priority, technicianId, estimatedCompletionDate, internalNotes } = req.body;
 
     if (!customerId || !equipment?.type || !reportedIssue) {
       return res.status(422).json({
@@ -77,13 +101,13 @@ export const create = async (req, res) => {
       });
     }
 
-    const customer = await customerRepository.findById(customerId);
-    if (!customer) {
-      return res.status(404).json({ message: 'Customer not found' });
-    }
+    const customer = await customerRepository.findById(companyId, customerId);
+    if (!customer) return res.status(404).json({ message: 'Customer not found' });
 
     const serviceOrder = await serviceOrderRepository.create({
+      companyId,
       customerId,
+      vehicleId: vehicleId || undefined,
       equipment,
       reportedIssue,
       priority,
@@ -92,10 +116,13 @@ export const create = async (req, res) => {
       internalNotes,
       statusHistory: [{
         status: 'open',
-        changedBy: req.userId,
+        changedBy: req.user.sub,
         notes: 'Ordem de serviço criada'
       }]
     });
+
+    // Ajusta o KM do veículo com o valor informado na OS.
+    await syncVehicleMileage(companyId, serviceOrder.vehicleId, serviceOrder.equipment?.mileage);
 
     return res.status(201).json(serviceOrder);
   } catch (err) {
@@ -106,6 +133,7 @@ export const create = async (req, res) => {
 
 export const update = async (req, res) => {
   try {
+    const companyId = req.user.companyId;
     const { id } = req.params;
     const body = req.body;
 
@@ -113,15 +141,15 @@ export const update = async (req, res) => {
       return res.status(422).json({ message: 'Body is empty' });
     }
 
-    // Nao permitir alterar status diretamente pelo update (usar updateStatus)
     delete body.status;
     delete body.statusHistory;
     delete body.orderNumber;
 
-    const serviceOrder = await serviceOrderRepository.update(id, body);
-    if (!serviceOrder) {
-      return res.status(404).json({ message: 'Service order not found' });
-    }
+    const serviceOrder = await serviceOrderRepository.update(companyId, id, body);
+    if (!serviceOrder) return res.status(404).json({ message: 'Service order not found' });
+
+    // Ajusta o KM do veículo sempre que informado na OS.
+    await syncVehicleMileage(companyId, serviceOrder.vehicleId, serviceOrder.equipment?.mileage);
 
     return res.status(200).json(serviceOrder);
   } catch (err) {
@@ -132,22 +160,19 @@ export const update = async (req, res) => {
 
 export const updateStatus = async (req, res) => {
   try {
+    const companyId = req.user.companyId;
     const { id } = req.params;
     const { status, notes } = req.body;
 
-    if (!status) {
-      return res.status(422).json({ message: 'Status is required' });
-    }
+    if (!status) return res.status(422).json({ message: 'Status is required' });
 
     const validStatuses = ['open', 'diagnosing', 'quoted', 'approved', 'in_progress', 'completed', 'delivered', 'cancelled'];
     if (!validStatuses.includes(status)) {
       return res.status(422).json({ message: `Invalid status. Valid: ${validStatuses.join(', ')}` });
     }
 
-    const serviceOrder = await serviceOrderRepository.findById(id);
-    if (!serviceOrder) {
-      return res.status(404).json({ message: 'Service order not found' });
-    }
+    const serviceOrder = await serviceOrderRepository.findById(companyId, id);
+    if (!serviceOrder) return res.status(404).json({ message: 'Service order not found' });
 
     const updateData = { status };
 
@@ -166,16 +191,30 @@ export const updateStatus = async (req, res) => {
 
     if (status === 'cancelled') {
       updateData.cancelReason = notes || '';
+      // Devolve ao estoque tudo que foi baixado pelas peças desta OS.
+      if (serviceOrder.parts?.length) {
+        await stockService.reverseServiceOrderParts({
+          companyId,
+          serviceOrderId: id,
+          orderNumber: serviceOrder.orderNumber,
+          parts: serviceOrder.parts,
+          userId: req.user.sub
+        });
+        updateData.parts = serviceOrder.parts.map(p => ({
+          ...(p.toObject ? p.toObject() : p),
+          deductedQuantity: 0
+        }));
+      }
     }
 
-    await serviceOrderRepository.update(id, updateData);
-    await serviceOrderRepository.addStatusHistory(id, {
+    await serviceOrderRepository.update(companyId, id, updateData);
+    await serviceOrderRepository.addStatusHistory(companyId, id, {
       status,
-      changedBy: req.userId,
+      changedBy: req.user.sub,
       notes: notes || ''
     });
 
-    const updated = await serviceOrderRepository.findById(id);
+    const updated = await serviceOrderRepository.findById(companyId, id);
     return res.status(200).json(updated);
   } catch (err) {
     logger.error('ServiceOrderController :: updateStatus >> ', err);
@@ -185,36 +224,46 @@ export const updateStatus = async (req, res) => {
 
 export const addDiagnosis = async (req, res) => {
   try {
+    const companyId = req.user.companyId;
     const { id } = req.params;
     const { diagnosis, services, parts, estimatedCost } = req.body;
 
-    if (!diagnosis) {
-      return res.status(422).json({ message: 'Diagnosis is required' });
-    }
+    if (!diagnosis) return res.status(422).json({ message: 'Diagnosis is required' });
 
-    const serviceOrder = await serviceOrderRepository.findById(id);
-    if (!serviceOrder) {
-      return res.status(404).json({ message: 'Service order not found' });
-    }
+    const serviceOrder = await serviceOrderRepository.findById(companyId, id);
+    if (!serviceOrder) return res.status(404).json({ message: 'Service order not found' });
 
     const updateData = { diagnosis };
     if (services) updateData.services = services;
-    if (parts) updateData.parts = parts;
     if (estimatedCost !== undefined) updateData.estimatedCost = estimatedCost;
 
-    await serviceOrderRepository.update(id, updateData);
+    // Peças: reconcilia o estoque (baixa/estorno por delta) antes de salvar.
+    // Bloqueia (409) se faltar saldo em algum produto vinculado.
+    if (parts) {
+      updateData.parts = await stockService.reconcileServiceOrderParts({
+        companyId,
+        serviceOrderId: id,
+        orderNumber: serviceOrder.orderNumber,
+        oldParts: serviceOrder.parts || [],
+        newParts: parts,
+        userId: req.user.sub
+      });
+    }
 
-    const updated = await serviceOrderRepository.findById(id);
+    await serviceOrderRepository.update(companyId, id, updateData);
+
+    const updated = await serviceOrderRepository.findById(companyId, id);
     return res.status(200).json(updated);
   } catch (err) {
     logger.error('ServiceOrderController :: addDiagnosis >> ', err);
-    return res.status(500).json({ message: 'Internal server error' });
+    return res.status(err.status || 500).json({ message: err.message || 'Internal server error' });
   }
 };
 
 export const dashboard = async (req, res) => {
   try {
-    const statusCounts = await serviceOrderRepository.countByStatus();
+    const companyId = req.user.companyId;
+    const statusCounts = await serviceOrderRepository.countByStatus(companyId);
 
     const summary = {
       open: 0,
@@ -240,18 +289,338 @@ export const dashboard = async (req, res) => {
   }
 };
 
-export const destroy = async (req, res) => {
+// ─── Faturamento ──────────────────────────────────────────────────────────────
+
+export const invoice = async (req, res) => {
   try {
+    const companyId = req.user.companyId;
+    const userId = req.user.sub;
     const { id } = req.params;
 
-    const serviceOrder = await serviceOrderRepository.softDelete(id);
-    if (!serviceOrder) {
-      return res.status(404).json({ message: 'Service order not found' });
+    // Bloqueio de role aqui também (controller é alcançado via rotas de service-orders,
+    // que não exigem role financeira). Permitimos administrator e finance.
+    const role = req.user.role;
+    if (!['super_admin', 'administrator', 'finance'].includes(role)) {
+      return res.status(403).json({ message: 'Apenas usuários com role administrator ou finance podem faturar.' });
+    }
+
+    // Bloqueio de módulo: empresa precisa ter o módulo financial ativo
+    const modules = req.user.modules || [];
+    if (!modules.includes('financial')) {
+      return res.status(403).json({ message: 'Módulo financeiro não está ativo para esta empresa.' });
+    }
+
+    const doc = await receivableService.invoiceFromServiceOrder({
+      companyId,
+      userId,
+      serviceOrderId: id,
+      data: req.body || {}
+    });
+    return res.status(201).json(doc);
+  } catch (err) {
+    logger.error('ServiceOrderController :: invoice >> ', err);
+    return res.status(err.status || 500).json({
+      message: err.message || 'Internal server error',
+      details: err.details
+    });
+  }
+};
+
+export const listReceivables = async (req, res) => {
+  try {
+    const companyId = req.user.companyId;
+    const { id } = req.params;
+    const list = await receivableService.listByServiceOrder(companyId, id);
+    return res.status(200).json(list);
+  } catch (err) {
+    logger.error('ServiceOrderController :: listReceivables >> ', err);
+    return res.status(500).json({ message: 'Internal server error' });
+  }
+};
+
+export const destroy = async (req, res) => {
+  try {
+    const companyId = req.user.companyId;
+    const { id } = req.params;
+
+    // Carrega antes do soft delete para conhecer as peças baixadas.
+    const existing = await serviceOrderRepository.findById(companyId, id);
+
+    const serviceOrder = await serviceOrderRepository.softDelete(companyId, id);
+    if (!serviceOrder) return res.status(404).json({ message: 'Service order not found' });
+
+    // Devolve ao estoque as peças que tinham baixa registrada.
+    if (existing?.parts?.length) {
+      await stockService.reverseServiceOrderParts({
+        companyId,
+        serviceOrderId: id,
+        orderNumber: existing.orderNumber,
+        parts: existing.parts,
+        userId: req.user.sub
+      });
     }
 
     return res.status(200).json({ message: 'Service order deleted successfully' });
   } catch (err) {
     logger.error('ServiceOrderController :: destroy >> ', err);
+    return res.status(500).json({ message: 'Internal server error' });
+  }
+};
+
+// ─── Impressão em PDF ───────────────────────────────────────────────────────────
+
+export const exportPdf = async (req, res) => {
+  try {
+    const companyId = req.user.companyId;
+    const { id } = req.params;
+
+    const order = await serviceOrderRepository.findById(companyId, id);
+    if (!order) return res.status(404).json({ message: 'Service order not found' });
+
+    const company = await companyRepository.findById(companyId);
+
+    // Logo da empresa (privada no S3): baixa os bytes para embutir no PDF.
+    let logoBuffer = null;
+    if (company?.logo?.storageKey) {
+      try {
+        const obj = await s3Service.getObjectBuffer({ companyId, key: company.logo.storageKey });
+        logoBuffer = obj.buffer;
+      } catch (logoErr) {
+        logger.warn('ServiceOrderController :: exportPdf logo fetch failed >> ', logoErr?.message);
+      }
+    }
+
+    // Fotos anexadas: baixa os bytes (S3 ou disco local) para embutir no PDF.
+    // PDFKit não renderiza WEBP, então convertemos esses arquivos para JPEG só
+    // no momento da impressão (o arquivo original permanece intacto).
+    const orderPhotos = order.photos || [];
+    const photoImages = (await Promise.all(
+      orderPhotos.map(async (p) => {
+        const loaded = await loadPhotoBuffer({ companyId, photo: p });
+        if (!loaded?.buffer) return null;
+        const isWebp = loaded.mimetype === 'image/webp'
+          || /\.webp$/i.test(loaded.filename || '');
+        if (isWebp) {
+          try {
+            loaded.buffer = await sharp(loaded.buffer).jpeg({ quality: 82 }).toBuffer();
+            loaded.mimetype = 'image/jpeg';
+          } catch (convErr) {
+            logger.warn('ServiceOrderController :: exportPdf webp convert failed >> ', convErr?.message);
+            return null;
+          }
+        }
+        return loaded;
+      })
+    )).filter(Boolean);
+
+    const buffer = await buildServiceOrderPdf({
+      order: order.toObject ? order.toObject() : order,
+      company: company ? (company.toObject ? company.toObject() : company) : null,
+      logo: logoBuffer,
+      photos: photoImages
+    });
+
+    const fname = `OS-${order.orderNumber || id}.pdf`;
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', `inline; filename="${fname}"`);
+    res.setHeader('Content-Length', String(buffer.length));
+    return res.end(buffer);
+  } catch (err) {
+    logger.error('ServiceOrderController :: exportPdf >> ', err);
+    return res.status(500).json({ message: 'Internal server error' });
+  }
+};
+
+// ─── Fotos da OS ────────────────────────────────────────────────────────────────
+
+// Armazena o arquivo no S3 da empresa (quando configurado) ou no disco local.
+const storeOsPhoto = async ({ companyId, serviceOrderId, file, req }) => {
+  const ts = Date.now();
+  const rand = Math.round(Math.random() * 1e9);
+  const ext = (file.originalname.match(/\.([A-Za-z0-9]+)$/)?.[1] || 'jpg').toLowerCase();
+  const objectName = `${ts}-${rand}.${ext}`;
+
+  const useS3 = await s3Service.hasConfig(companyId);
+  if (useS3) {
+    const result = await s3Service.uploadObject({
+      companyId,
+      category: `service-orders/${serviceOrderId}`,
+      filename: objectName,
+      body: file.buffer,
+      contentType: file.mimetype
+    });
+    return {
+      url: result.url,
+      storageKey: result.key,
+      storageBucket: result.bucket,
+      storageSource: result.source,
+      filename: file.originalname,
+      mimetype: file.mimetype,
+      size: file.size
+    };
+  }
+
+  // Fallback local: grava em uploads/service-orders/<id> e serve por /uploads.
+  const dir = path.join('uploads', 'service-orders', String(serviceOrderId));
+  fs.mkdirSync(dir, { recursive: true });
+  fs.writeFileSync(path.join(dir, objectName), file.buffer);
+  const baseUrl = process.env.API_URL || `${req.protocol}://${req.get('host')}`;
+  return {
+    url: `${baseUrl}/uploads/service-orders/${serviceOrderId}/${objectName}`,
+    storageSource: 'local',
+    filename: file.originalname,
+    mimetype: file.mimetype,
+    size: file.size
+  };
+};
+
+// Carrega os bytes de uma foto da OS, seja do S3 (company/default) ou do disco
+// local (/uploads). Retorna null quando não for possível obter o arquivo.
+const loadPhotoBuffer = async ({ companyId, photo }) => {
+  const obj = photo?.toObject ? photo.toObject() : photo;
+  if (!obj) return null;
+  try {
+    if (obj.storageKey && (obj.storageSource === 'company' || obj.storageSource === 'default')) {
+      const result = await s3Service.getObjectBuffer({ companyId, key: obj.storageKey });
+      return { buffer: result.buffer, mimetype: obj.mimetype, filename: obj.filename };
+    }
+    if (obj.url) {
+      const marker = '/uploads/';
+      const idx = obj.url.indexOf(marker);
+      if (idx !== -1) {
+        const rel = obj.url.substring(idx + marker.length);
+        const filePath = path.join('uploads', ...rel.split('/').filter(Boolean));
+        if (fs.existsSync(filePath)) {
+          return { buffer: fs.readFileSync(filePath), mimetype: obj.mimetype, filename: obj.filename };
+        }
+      }
+    }
+  } catch (err) {
+    logger.warn('ServiceOrderController :: loadPhotoBuffer failed >> ', err?.message);
+  }
+  return null;
+};
+
+// Validade padrão das URLs temporárias de visualização das fotos (15 min).
+const PHOTO_VIEW_EXPIRES_IN = 15 * 60;
+
+// Resolve a URL de exibição de uma foto. Para objetos privados no S3 (company/default)
+// gera uma URL temporária assinada com as credenciais armazenadas; para arquivos
+// locais ou objetos públicos devolve a URL já persistida.
+const resolvePhotoViewUrl = async ({ companyId, photo, expiresIn = PHOTO_VIEW_EXPIRES_IN }) => {
+  if (photo?.storageKey && (photo.storageSource === 'company' || photo.storageSource === 'default')) {
+    return await s3Service.getPresignedUrl({ companyId, key: photo.storageKey, expiresIn });
+  }
+  return photo?.url || null;
+};
+
+// Converte uma lista de fotos em objetos planos, cada um com uma viewUrl temporária.
+const enrichPhotos = async (companyId, photos = []) => {
+  return await Promise.all(
+    photos.map(async (p) => {
+      const obj = p.toObject ? p.toObject() : { ...p };
+      try {
+        obj.viewUrl = await resolvePhotoViewUrl({ companyId, photo: obj });
+      } catch (signErr) {
+        logger.warn('ServiceOrderController :: enrichPhotos sign failed >> ', signErr?.message);
+        obj.viewUrl = obj.url || null;
+      }
+      return obj;
+    })
+  );
+};
+
+export const getPhotos = async (req, res) => {
+  try {
+    const companyId = req.user.companyId;
+    const { id } = req.params;
+    const order = await serviceOrderRepository.findById(companyId, id);
+    if (!order) return res.status(404).json({ message: 'Service order not found' });
+
+    const enriched = await enrichPhotos(companyId, order.photos || []);
+    return res.status(200).json(enriched);
+  } catch (err) {
+    logger.error('ServiceOrderController :: getPhotos >> ', err);
+    return res.status(500).json({ message: 'Internal server error' });
+  }
+};
+
+// Gera/renova sob demanda a URL temporária de uma foto específica.
+// Útil quando a viewUrl anterior expirou. Retorna { url, expiresIn }.
+export const getPhotoUrl = async (req, res) => {
+  try {
+    const companyId = req.user.companyId;
+    const { id, photoId } = req.params;
+
+    const photo = await serviceOrderRepository.findPhoto(companyId, id, photoId);
+    if (!photo) return res.status(404).json({ message: 'Photo not found' });
+
+    const obj = photo.toObject ? photo.toObject() : photo;
+    const expiresIn = PHOTO_VIEW_EXPIRES_IN;
+    const url = await resolvePhotoViewUrl({ companyId, photo: obj, expiresIn });
+    if (!url) return res.status(404).json({ message: 'Photo URL unavailable' });
+
+    return res.status(200).json({ url, expiresIn });
+  } catch (err) {
+    logger.error('ServiceOrderController :: getPhotoUrl >> ', err);
+    return res.status(500).json({ message: 'Internal server error' });
+  }
+};
+
+export const addPhoto = async (req, res) => {
+  try {
+    const companyId = req.user.companyId;
+    const { id } = req.params;
+
+    if (!req.file) {
+      return res.status(422).json({ message: 'Photo file is required' });
+    }
+
+    const order = await serviceOrderRepository.findById(companyId, id);
+    if (!order) return res.status(404).json({ message: 'Service order not found' });
+
+    let photo;
+    try {
+      photo = await storeOsPhoto({ companyId, serviceOrderId: id, file: req.file, req });
+    } catch (uploadErr) {
+      logger.error('ServiceOrderController :: addPhoto upload >> ', uploadErr);
+      return res.status(500).json({ message: uploadErr?.message || 'Falha ao enviar foto' });
+    }
+
+    photo.order = order.photos?.length || 0;
+    const updated = await serviceOrderRepository.addPhoto(companyId, id, photo);
+    const enriched = await enrichPhotos(companyId, updated.photos || []);
+    return res.status(201).json(enriched);
+  } catch (err) {
+    logger.error('ServiceOrderController :: addPhoto >> ', err);
+    return res.status(500).json({ message: 'Internal server error' });
+  }
+};
+
+export const deletePhoto = async (req, res) => {
+  try {
+    const companyId = req.user.companyId;
+    const { id, photoId } = req.params;
+
+    const photo = await serviceOrderRepository.findPhoto(companyId, id, photoId);
+    if (!photo) return res.status(404).json({ message: 'Photo not found' });
+
+    // Best-effort: remove do S3 quando aplicável (não bloqueia a remoção do registro).
+    if (photo.storageKey && (photo.storageSource === 'company' || photo.storageSource === 'default')) {
+      try {
+        await s3Service.deleteObject({ companyId, key: photo.storageKey });
+      } catch (s3Err) {
+        logger.warn('ServiceOrderController :: deletePhoto S3 delete failed >> ', s3Err?.message);
+      }
+    }
+
+    const updated = await serviceOrderRepository.removePhoto(companyId, id, photoId);
+    if (!updated) return res.status(404).json({ message: 'Service order not found' });
+
+    const enriched = await enrichPhotos(companyId, updated.photos || []);
+    return res.status(200).json(enriched);
+  } catch (err) {
+    logger.error('ServiceOrderController :: deletePhoto >> ', err);
     return res.status(500).json({ message: 'Internal server error' });
   }
 };
