@@ -15,72 +15,78 @@ class TicketRepository {
     try {
       return await Ticket.findById(id)
         .populate('assignedTo', 'name email')
-        .populate('messages');
+        .populate('categoryId', 'name color')
+        .populate('subjectId', 'name')
+        .populate('statusId', 'name label color')
+        .populate('messages')
+        .populate('appointmentId')
+        .populate('serviceOrderId', 'orderNumber status')
+        .populate('responses.respondedBy', 'name email');
     } catch (error) {
       throw new Error(error.message);
     }
   }
 
-  async findByContact(sessionName, contactNumber) {
+  async findByContact(contactNumber) {
     try {
-        return await Ticket.findOne({
-        sessionName: sessionName,
-        contactNumber: contactNumber,
-        status: { $in: ['opened', 'in_progress', 'paused'] }
-      }).sort({ createdAt: -1 });
+      return await Ticket.findOne({
+        contactNumber,
+        // status aberto buscado por statusId não-nulo (sem restrição de enum)
+      }).populate('statusId', 'name label').sort({ createdAt: -1 });
     } catch (error) {
       throw new Error(error.message);
     }
   }
 
-  async updateOrCreate(sessionName, contactNumber, updateData) {
-    try {
-      return await Ticket.findOneAndUpdate(
-        {
-          sessionName: sessionName,
-          contactNumber: contactNumber,
-          status: { $ne: 'closed' }
-        },
-        updateData,
-        { upsert: true, new: true }
-      );
-    } catch (error) {
-      throw error;
-    }
-  }
-
-  async findAll(sessionName = null, category = null) {
+  async findAll({ categoryId = null, statusId = null, assignedTo = null } = {}) {
     try {
       const query = {};
-      if (sessionName) query.sessionName = sessionName;
-      if (category) query.category = category;
+      if (categoryId) query.categoryId = categoryId;
+      if (statusId) query.statusId = statusId;
+      if (assignedTo) query.assignedTo = assignedTo;
+
       return await Ticket.find(query)
+        .populate('categoryId', 'name color')
+        .populate('subjectId', 'name')
+        .populate('statusId', 'name label color')
+        .populate('assignedTo', 'name email')
         .populate('saleItems.product', 'name price sku')
-        .sort({ lastMessage: -1 })
+        .sort({ createdAt: -1 })
         .exec();
     } catch (error) {
       throw error;
     }
   }
 
-  async updateStatus(id, status, additionalData = {}) {
+  async updateStatus(id, statusId) {
     try {
-      const updateData = { status, ...additionalData };
-      
-      if (status === 'finished' || status === 'canceled') {
-        updateData.closedAt = new Date();
-      }
-      if (status === 'finished') {
-        updateData.resolvedAt = new Date();
-      }
-
       return await Ticket.findByIdAndUpdate(
         id,
-        { $set: updateData },
+        { $set: { statusId } },
         { new: true }
-      ).populate('assignedTo', 'name email');
+      )
+        .populate('statusId', 'name label color')
+        .populate('assignedTo', 'name email');
     } catch (error) {
-      throw new Error('Erro ao atualizar status:' + error.message);
+      throw new Error('Erro ao atualizar status: ' + error.message);
+    }
+  }
+
+  async addResponse(ticketId, { content, respondedBy }) {
+    try {
+      return await Ticket.findByIdAndUpdate(
+        ticketId,
+        {
+          $push: {
+            responses: { content, respondedBy, respondedAt: new Date() }
+          }
+        },
+        { new: true }
+      )
+        .populate('responses.respondedBy', 'name email')
+        .populate('statusId', 'name label color');
+    } catch (error) {
+      throw new Error('Erro ao adicionar resposta: ' + error.message);
     }
   }
 
@@ -88,16 +94,11 @@ class TicketRepository {
     try {
       return await Ticket.findByIdAndUpdate(
         id,
-        { 
-          $set: { 
-            assignedTo: userId,
-            status: 'in_progress'
-          }
-        },
+        { $set: { assignedTo: userId } },
         { new: true }
       ).populate('assignedTo', 'name email');
     } catch (error) {
-      throw new Error('Erro ao atribuir ticket: '+ error.message);
+      throw new Error('Erro ao atribuir ticket: ' + error.message);
     }
   }
 
@@ -105,24 +106,38 @@ class TicketRepository {
     try {
       return await Ticket.findByIdAndUpdate(
         ticketId,
-        { 
+        {
           $push: { messages: messageId },
           $set: { lastMessage: new Date() }
         },
         { new: true }
       );
     } catch (error) {
-      throw new Error('Erro ao adicionar mensagem: '+ error.message);
+      throw new Error('Erro ao adicionar mensagem: ' + error.message);
     }
   }
 
-  async getTicketsStats(sessionName) {
+  async update(id, data) {
+    try {
+      return await Ticket.findByIdAndUpdate(
+        id,
+        { $set: data },
+        { new: true }
+      )
+        .populate('categoryId', 'name color')
+        .populate('subjectId', 'name')
+        .populate('statusId', 'name label color');
+    } catch (error) {
+      throw new Error('Erro ao atualizar ticket: ' + error.message);
+    }
+  }
+
+  async getTicketsStats() {
     try {
       return await Ticket.aggregate([
-        { $match: { sessionName } },
         {
           $group: {
-            _id: '$status',
+            _id: '$statusId',
             count: { $sum: 1 }
           }
         }
@@ -138,7 +153,7 @@ class TicketRepository {
       return await Ticket.findByIdAndDelete(id);
     } catch (error) {
       logger.error('Erro ao deletar: ', error);
-      throw new Error('Erro ao deletar ticket: '+ error.message);
+      throw new Error('Erro ao deletar ticket: ' + error.message);
     }
   }
 
@@ -148,7 +163,7 @@ class TicketRepository {
         { $match: query },
         {
           $group: {
-            _id: '$status',
+            _id: '$statusId',
             count: { $sum: 1 },
             totalMessages: { $sum: { $size: '$messages' } },
             avgMessagesPerTicket: { $avg: { $size: '$messages' } },
@@ -157,8 +172,16 @@ class TicketRepository {
           }
         },
         {
+          $lookup: {
+            from: 'ticketstatuses',
+            localField: '_id',
+            foreignField: '_id',
+            as: 'status'
+          }
+        },
+        {
           $project: {
-            status: '$_id',
+            status: { $arrayElemAt: ['$status', 0] },
             count: 1,
             totalMessages: 1,
             avgMessagesPerTicket: { $round: ['$avgMessagesPerTicket', 2] },
@@ -167,7 +190,7 @@ class TicketRepository {
             _id: 0
           }
         },
-        { $sort: { status: 1 } }
+        { $sort: { 'status.order': 1 } }
       ]);
 
       const totals = await Ticket.aggregate([
@@ -180,18 +203,10 @@ class TicketRepository {
             avgMessagesAll: { $avg: { $size: '$messages' } },
             oldestTicket: { $min: '$createdAt' },
             newestTicket: { $max: '$createdAt' },
-            lowPriority: {
-              $sum: { $cond: [{ $eq: ['$priority', 'low'] }, 1, 0] }
-            },
-            mediumPriority: {
-              $sum: { $cond: [{ $eq: ['$priority', 'medium'] }, 1, 0] }
-            },
-            highPriority: {
-              $sum: { $cond: [{ $eq: ['$priority', 'high'] }, 1, 0] }
-            },
-            urgentPriority: {
-              $sum: { $cond: [{ $eq: ['$priority', 'urgent'] }, 1, 0] }
-            }
+            lowPriority: { $sum: { $cond: [{ $eq: ['$priority', 'low'] }, 1, 0] } },
+            mediumPriority: { $sum: { $cond: [{ $eq: ['$priority', 'medium'] }, 1, 0] } },
+            highPriority: { $sum: { $cond: [{ $eq: ['$priority', 'high'] }, 1, 0] } },
+            urgentPriority: { $sum: { $cond: [{ $eq: ['$priority', 'urgent'] }, 1, 0] } }
           }
         },
         {
@@ -220,90 +235,12 @@ class TicketRepository {
           avgMessagesAll: 0,
           oldestTicket: null,
           newestTicket: null,
-          priorityBreakdown: {
-            low: 0,
-            medium: 0,
-            high: 0,
-            urgent: 0
-          }
+          priorityBreakdown: { low: 0, medium: 0, high: 0, urgent: 0 }
         }
       };
-
     } catch (error) {
-      logger.error('Repository - dashboard Error : ', error)
-      throw new Error('Repository - Dashboard Error:' + error.message);
-    }
-  }
-
-  async dashboardWithTimeAnalysis(query = {}) {
-    try {
-      const today = new Date();
-      const startOfToday = new Date(today.setHours(0, 0, 0, 0));
-      const startOfWeek = new Date(today.setDate(today.getDate() - today.getDay()));
-      const startOfMonth = new Date(today.getFullYear(), today.getMonth(), 1);
-
-      const timeAnalysis = await Ticket.aggregate([
-        { $match: query },
-        {
-          $facet: {
-            today: [
-              { $match: { createdAt: { $gte: startOfToday } } },
-              { $group: { _id: '$status', count: { $sum: 1 } } }
-            ],
-            thisWeek: [
-              { $match: { createdAt: { $gte: startOfWeek } } },
-              {
-                $group: {
-                  _id: { $dayOfWeek: '$createdAt' },
-                  count: { $sum: 1 }
-                }
-              },
-              {
-                $project: {
-                  _id: 0,
-                  day: {
-                    $switch: {
-                      branches: [
-                        { case: { $eq: ['$_id', 1] }, then: 'sunday' },
-                        { case: { $eq: ['$_id', 2] }, then: 'monday' },
-                        { case: { $eq: ['$_id', 3] }, then: 'tuesday' },
-                        { case: { $eq: ['$_id', 4] }, then: 'wednesday' },
-                        { case: { $eq: ['$_id', 5] }, then: 'thursday' },
-                        { case: { $eq: ['$_id', 6] }, then: 'friday' },
-                        { case: { $eq: ['$_id', 7] }, then: 'saturday' }
-                      ],
-                      default: 'unknown'
-                    }
-                  },
-                  count: 1
-                }
-              },
-              { $sort: { '_id': 1 } }
-            ],
-            thisMonth: [
-              { $match: { createdAt: { $gte: startOfMonth } } },
-              { $group: { _id: '$status', count: { $sum: 1 } } }
-            ],
-            byHour: [
-              {
-                $group: {
-                  _id: {
-                    hour: { $hour: '$createdAt' },
-                    status: '$status'
-                  },
-                  count: { $sum: 1 }
-                }
-              },
-              { $sort: { '_id.hour': 1 } }
-            ]
-          }
-        }
-      ]);
-
-      return timeAnalysis[0];
-    } catch (error) {
-      logger.error('Repository :: dashboardWithTimeAnalysis >>>>> ', error)
-      throw new Error('Repository - Time Analysis Error: '+ error.message);
+      logger.error('Repository - dashboard Error : ', error);
+      throw new Error('Repository - Dashboard Error: ' + error.message);
     }
   }
 }

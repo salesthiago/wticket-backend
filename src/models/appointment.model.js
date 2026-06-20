@@ -1,14 +1,23 @@
 import mongoose from 'mongoose';
 
 const appointmentSchema = new mongoose.Schema({
+  ticketId: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'Ticket',
+    required: false
+  },
   contactId: {
     type: mongoose.Schema.Types.ObjectId,
-    required: true,
+    required: false,
     ref: 'Contact'
+  },
+  contactName: {
+    type: String,
+    required: false
   },
   phone: {
     type: String,
-    required: true
+    required: false
   },
   // Data do agendamento
   scheduledDate: {
@@ -34,7 +43,7 @@ const appointmentSchema = new mongoose.Schema({
   // Descrição/motivo
   description: {
     type: String,
-    required: true
+    required: false
   },
   // Tipo de serviço
   service: {

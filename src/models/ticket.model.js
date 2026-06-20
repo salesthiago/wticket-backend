@@ -1,27 +1,29 @@
 import mongoose from 'mongoose';
 
 const TicketSchema = new mongoose.Schema({
-  contactNumber: { 
-    type: String, 
-    required: true,
+  contactNumber: {
+    type: String,
     index: true
   },
-  contactName: { 
-    type: String 
+  contactName: {
+    type: String
   },
-  sessionName: {
-    type: String,
-    required: true,
-    index: true
+  // sessionName desabilitado: era usado pelo WhatsApp (será serviço separado)
+  // sessionName: {
+  //   type: String,
+  //   index: true
+  // },
+  categoryId: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'TicketCategory'
   },
-  subject: {
-    type: String,
-    default: 'Atendimento'
+  subjectId: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'TicketSubject'
   },
-  status: {
-    type: String,
-    enum: ['opened', 'in_progress', 'finished', 'canceled', 'paused'],
-    default: 'opened'
+  statusId: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'TicketStatus'
   },
   priority: {
     type: String,
@@ -39,6 +41,11 @@ const TicketSchema = new mongoose.Schema({
     type: mongoose.Schema.Types.ObjectId,
     ref: 'Message'
   }],
+  responses: [{
+    content: { type: String, required: true },
+    respondedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
+    respondedAt: { type: Date, default: Date.now }
+  }],
   lastMessage: {
     type: Date
   },
@@ -51,21 +58,22 @@ const TicketSchema = new mongoose.Schema({
   closedBy: {
     type: String
   },
-  botHandled: {
-    type: Boolean,
-    default: false,
-    index: true
-  },
-  aiHandled: {
-    type: Boolean,
-    default: false,
-    index: true
-  },
-  aiAgentId: {
-    type: mongoose.Schema.Types.ObjectId,
-    ref: 'AiAgent',
-    default: null
-  },
+  // botHandled e aiHandled desabilitados: dependentes do WhatsApp
+  // botHandled: {
+  //   type: Boolean,
+  //   default: false,
+  //   index: true
+  // },
+  // aiHandled: {
+  //   type: Boolean,
+  //   default: false,
+  //   index: true
+  // },
+  // aiAgentId: {
+  //   type: mongoose.Schema.Types.ObjectId,
+  //   ref: 'AiAgent',
+  //   default: null
+  // },
   resolution: {
     type: String
   },
@@ -73,14 +81,12 @@ const TicketSchema = new mongoose.Schema({
     type: mongoose.Schema.Types.ObjectId,
     ref: 'Appointment'
   },
+  serviceOrderId: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'ServiceOrder'
+  },
   notes: {
     type: String
-  },
-  category: {
-    type: String,
-    enum: ['support', 'sale'],
-    default: 'support',
-    index: true
   },
   saleItems: [{
     product: { type: mongoose.Schema.Types.ObjectId, ref: 'Product' },
@@ -94,9 +100,8 @@ const TicketSchema = new mongoose.Schema({
   timestamps: true
 });
 
-// Índices para buscas
-TicketSchema.index({ sessionName: 1, status: 1 });
-TicketSchema.index({ contactNumber: 1 });
+TicketSchema.index({ statusId: 1 });
+TicketSchema.index({ categoryId: 1 });
 TicketSchema.index({ assignedTo: 1 });
 TicketSchema.index({ createdAt: -1 });
 
