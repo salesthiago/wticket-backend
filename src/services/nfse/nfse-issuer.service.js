@@ -336,7 +336,22 @@ class NfseIssuerService {
    * ou ListaMensagemRetorno > MensagemRetorno (em caso de erro).
    */
   parseGerarNfseResponse(ws) {
-    if (!ws.parsed) return { success: false, mensagens: [{ codigo: 'PARSE', mensagem: 'Resposta inválida do webservice' }] };
+    if (!ws.parsed) {
+      const mensagens = [];
+      if (ws.error) {
+        mensagens.push({ codigo: String(ws.httpStatus || 0), mensagem: `Erro de comunicação: ${ws.error}` });
+      } else if (ws.httpStatus && (ws.httpStatus < 200 || ws.httpStatus >= 300)) {
+        const responseSnippet = typeof ws.response === 'string' ? ws.response.substring(0, 500) : null;
+        mensagens.push({
+          codigo: String(ws.httpStatus),
+          mensagem: `Webservice retornou HTTP ${ws.httpStatus}`,
+          correcao: responseSnippet || undefined
+        });
+      } else {
+        mensagens.push({ codigo: 'PARSE', mensagem: 'Resposta inválida do webservice' });
+      }
+      return { success: false, mensagens };
+    }
 
     // Navega genérica e tolerante a variações
     const env = ws.parsed.Envelope || ws.parsed;
@@ -403,6 +418,95 @@ class NfseIssuerService {
     }
 
     return { success: false, mensagens };
+  }
+}
+
+  /**
+   * Retransmite uma DPS já assinada ao webservice da prefeitura.
+   * Permitido apenas para issuances com status 'error' ou 'rejected'.
+   */
+  async retransmit({ companyId, issuanceId }) {
+    if (!companyId) throw new Error('companyId é obrigatório');
+    if (!issuanceId) throw new Error('issuanceId é obrigatório');
+
+    const issuance = await nfseIssuanceRepository.findById(companyId, issuanceId);
+    if (!issuance) {
+      throw Object.assign(new Error('Emissão não encontrada'), { status: 404 });
+    }
+    if (!['error', 'rejected'].includes(issuance.status)) {
+      throw Object.assign(
+        new Error(`Retransmissão não permitida: status atual é "${issuance.status}". Apenas emissões com erro ou rejeitadas podem ser retransmitidas.`),
+        { status: 422 }
+      );
+    }
+    if (!issuance.xmlDpsAssinado) {
+      throw Object.assign(new Error('XML assinado não disponível para retransmissão'), { status: 422 });
+    }
+
+    const config = await nfseConfigRepository.findByCompany(companyId);
+    if (!config) {
+      throw Object.assign(new Error('Configuração NFS-e não encontrada'), { status: 422 });
+    }
+
+    const overrideKey = config.ambiente === 1 ? 'producao' : 'homologacao';
+    const endpoint = config.endpoints?.[overrideKey] || resolveEndpoint(config.cMun, config.ambiente);
+    if (!endpoint) {
+      throw Object.assign(
+        new Error(`Endpoint não configurado para cMun=${config.cMun} ambiente=${config.ambiente}`),
+        { status: 422 }
+      );
+    }
+
+    issuance.pushStatus('sending', 'Retransmissão: enviando DPS ao webservice');
+    await issuance.save();
+
+    try {
+      const ws = await sendSoap({
+        endpoint,
+        operationKey: 'GERAR_NFSE',
+        xmlMessage: issuance.xmlDpsAssinado,
+        versaoDados: '1.01'
+      });
+
+      await nfseIssuanceRepository.logWsCall({
+        companyId,
+        issuanceId: issuance._id,
+        operation: NFSE_OPERATIONS.GERAR_NFSE.method,
+        endpoint,
+        ambiente: config.ambiente,
+        request: ws.request,
+        response: ws.response,
+        httpStatus: ws.httpStatus,
+        durationMs: ws.durationMs,
+        success: ws.httpStatus >= 200 && ws.httpStatus < 300,
+        errorMessage: ws.error || null
+      });
+
+      const result = this.parseGerarNfseResponse(ws);
+      issuance.xmlNfseRetorno = ws.response;
+
+      if (result.success) {
+        issuance.chaveAcesso = result.chaveAcesso || null;
+        issuance.numeroNfse = result.numeroNfse || null;
+        issuance.cStat = result.cStat || null;
+        issuance.dhProc = result.dhProc || new Date();
+        issuance.protocolo = result.protocolo || null;
+        issuance.urlConsulta = result.urlConsulta || null;
+        issuance.mensagensRetorno = result.mensagens || [];
+        issuance.pushStatus('authorized', `NFS-e ${result.numeroNfse || ''} autorizada`);
+      } else {
+        issuance.mensagensRetorno = result.mensagens || [];
+        issuance.pushStatus('rejected', result.mensagens?.[0]?.mensagem || 'Rejeitada');
+      }
+      await issuance.save();
+
+      return { issuance, ws };
+    } catch (err) {
+      logger.error('NfseIssuer :: retransmit >> ', err);
+      issuance.pushStatus('error', err.message);
+      await issuance.save();
+      throw err;
+    }
   }
 }
 

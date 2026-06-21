@@ -25,6 +25,7 @@ import nfseRoutes from './nfse/index.js'
 import financialRoutes from './financial/index.js'
 import billingRoutes from './billing.routes.js'
 import planRoutes from './plan.routes.js'
+import dashboardRoutes from './dashboard.routes.js'
 import swaggerUi from 'swagger-ui-express'
 //import swaggerFile from './swagger.json'
 
@@ -55,6 +56,7 @@ router.use('/service-orders', serviceOrderRoutes);
 router.use('/nfse', nfseRoutes);
 router.use('/financial', financialRoutes);
 router.use('/billing', billingRoutes);
+router.use('/dashboard', dashboardRoutes);
 //router.use('/docs', swaggerUi.serve, swaggerUi.setup(swaggerFile));
 
 export default router

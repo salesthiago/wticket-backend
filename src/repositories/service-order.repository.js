@@ -141,6 +141,61 @@ class ServiceOrderRepository {
       { $group: { _id: '$status', count: { $sum: 1 } } }
     ]);
   }
+
+  async serviceOrderDashboard(companyId) {
+    if (!companyId) throw new Error('companyId is required');
+    const match = { companyId, isActive: true };
+    const now = new Date();
+    const eighteenMonthsAgo = new Date(now.getFullYear(), now.getMonth() - 17, 1);
+    const activeStatuses = ['open', 'diagnosing', 'quoted', 'approved', 'in_progress'];
+    const MONTHS = ['Jan','Fev','Mar','Abr','Mai','Jun','Jul','Ago','Set','Out','Nov','Dez'];
+    const STATUS_LABELS = {
+      open: 'Aberta', diagnosing: 'Em Diagnóstico', quoted: 'Orçamento',
+      approved: 'Aprovada', in_progress: 'Em Execução',
+      completed: 'Concluída', delivered: 'Entregue', cancelled: 'Cancelada'
+    };
+
+    const [statusBreakdown, prioritySummary, overdueCount, monthlyTrend] = await Promise.all([
+      ServiceOrder.aggregate([
+        { $match: match },
+        { $group: { _id: '$status', count: { $sum: 1 } } }
+      ]),
+      ServiceOrder.aggregate([
+        { $match: match },
+        { $group: {
+          _id: null,
+          total:     { $sum: 1 },
+          low:       { $sum: { $cond: [{ $eq: ['$priority', 'low'] },                        1, 0] } },
+          normal:    { $sum: { $cond: [{ $eq: ['$priority', 'normal'] },                     1, 0] } },
+          high:      { $sum: { $cond: [{ $eq: ['$priority', 'high'] },                       1, 0] } },
+          urgent:    { $sum: { $cond: [{ $eq: ['$priority', 'urgent'] },                     1, 0] } },
+          completed: { $sum: { $cond: [{ $in: ['$status', ['completed', 'delivered']] },     1, 0] } },
+          cancelled: { $sum: { $cond: [{ $eq: ['$status', 'cancelled'] },                    1, 0] } }
+        }}
+      ]),
+      ServiceOrder.countDocuments({
+        ...match,
+        status: { $in: activeStatuses },
+        estimatedCompletionDate: { $lt: now }
+      }),
+      ServiceOrder.aggregate([
+        { $match: { ...match, createdAt: { $gte: eighteenMonthsAgo } } },
+        { $group: { _id: { year: { $year: '$createdAt' }, month: { $month: '$createdAt' } }, count: { $sum: 1 } } },
+        { $sort: { '_id.year': 1, '_id.month': 1 } }
+      ])
+    ]);
+
+    const sum = prioritySummary[0] || { total: 0, low: 0, normal: 0, high: 0, urgent: 0, completed: 0, cancelled: 0 };
+    return {
+      summary: { total: sum.total, overdue: overdueCount, completed: sum.completed, cancelled: sum.cancelled },
+      byPriority: { low: sum.low, normal: sum.normal, high: sum.high, urgent: sum.urgent },
+      byStatus: statusBreakdown.map(s => ({ status: s._id, label: STATUS_LABELS[s._id] || s._id, count: s.count })),
+      monthlyTrend: monthlyTrend.map(m => ({
+        label: `${MONTHS[m._id.month - 1]}/${String(m._id.year).slice(2)}`,
+        count: m.count
+      }))
+    };
+  }
 }
 
 export default new ServiceOrderRepository();
