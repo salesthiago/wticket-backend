@@ -11,6 +11,7 @@ router.get('/', authenticate, companyController.findAll);
 router.get('/:id', authenticate, companyController.findById);
 router.put('/:id', authenticate, companyController.update);
 router.patch('/:id/status', authenticate, companyController.setStatus);
+router.patch('/:id/exempt', authenticate, companyController.setExempt);
 router.post('/:id/modules', authenticate, companyController.addModule);
 router.delete('/:id/modules/:code', authenticate, companyController.removeModule);
 router.patch('/:id/modules/:code', authenticate, companyController.setModuleSubscription);

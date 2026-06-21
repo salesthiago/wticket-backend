@@ -27,11 +27,9 @@ const buildAuthContext = async (user) => {
   if (!user.companyId) return { companyId: null, modules: [], company: null };
   const company = await Company.findById(user.companyId);
   if (!company) return { companyId: user.companyId, modules: [], company: null };
-  return {
-    companyId: user.companyId,
-    modules: company.activeModuleCodes(),
-    company
-  };
+  // Empresas isentas têm todos os módulos cadastrados ativos, sem verificar pagamento
+  const modules = company.activeModuleCodes();
+  return { companyId: user.companyId, modules, company };
 };
 
 export const register = async (req, res) => {
@@ -58,7 +56,8 @@ export const login = async (req, res) => {
       if (!company) {
         return res.status(403).json({ message: 'User has no company associated' });
       }
-      if (company.status !== 'active') {
+      // Empresa isenta de assinatura: acesso livre independente do status de pagamento
+      if (!company.subscriptionExempt && company.status !== 'active') {
         return res.status(403).json({
           message: `Company is not active (status: ${company.status})`,
           companyStatus: company.status
