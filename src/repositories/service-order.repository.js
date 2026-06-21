@@ -1,3 +1,4 @@
+import mongoose from 'mongoose';
 import ServiceOrder from '../models/service-order.model.js';
 import logger from '../utils/logger.js';
 
@@ -137,14 +138,14 @@ class ServiceOrderRepository {
   async countByStatus(companyId) {
     if (!companyId) throw new Error('companyId is required');
     return await ServiceOrder.aggregate([
-      { $match: { companyId, isActive: true } },
+      { $match: { companyId: new mongoose.Types.ObjectId(companyId), isActive: true } },
       { $group: { _id: '$status', count: { $sum: 1 } } }
     ]);
   }
 
   async serviceOrderDashboard(companyId) {
     if (!companyId) throw new Error('companyId is required');
-    const match = { companyId, isActive: true };
+    const match = { companyId: new mongoose.Types.ObjectId(companyId), isActive: true };
     const now = new Date();
     const eighteenMonthsAgo = new Date(now.getFullYear(), now.getMonth() - 17, 1);
     const activeStatuses = ['open', 'diagnosing', 'quoted', 'approved', 'in_progress'];

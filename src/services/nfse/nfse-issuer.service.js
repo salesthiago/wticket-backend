@@ -421,6 +421,114 @@ class NfseIssuerService {
   }
 
   /**
+   * Edita os dados de uma issuance rejeitada/com erro e regenera o XML assinado.
+   * O nDPS e a série são mantidos — apenas o conteúdo do XML é atualizado.
+   * Após a edição o status volta a 'rejected' aguardando nova retransmissão.
+   */
+  async editAndRegenerateXml({ companyId, issuanceId, patch }) {
+    if (!companyId) throw new Error('companyId é obrigatório');
+    if (!issuanceId) throw new Error('issuanceId é obrigatório');
+
+    const issuance = await nfseIssuanceRepository.findById(companyId, issuanceId);
+    if (!issuance) {
+      throw Object.assign(new Error('Emissão não encontrada'), { status: 404 });
+    }
+    if (!['error', 'rejected'].includes(issuance.status)) {
+      throw Object.assign(
+        new Error(`Edição não permitida: status "${issuance.status}". Só emissões com erro ou rejeitadas podem ser editadas.`),
+        { status: 422 }
+      );
+    }
+
+    const config = await nfseConfigRepository.findByCompany(companyId);
+    if (!config) {
+      throw Object.assign(new Error('Configuração NFS-e não encontrada'), { status: 422 });
+    }
+    if (!config?.certificate?.storagePath) {
+      throw Object.assign(new Error('Certificado digital não configurado'), { status: 422 });
+    }
+
+    // Aplica alterações sobre os snapshots existentes
+    const tomador = patch.tomador !== undefined ? patch.tomador : (issuance.tomador?.toObject?.() ?? issuance.tomador);
+    const servico = {
+      ...(issuance.servico?.toObject?.() ?? issuance.servico),
+      ...(patch.servico || {})
+    };
+    const dCompet = patch.dCompet ? new Date(patch.dCompet) : issuance.dCompet;
+    const dhEmi = new Date();
+
+    // Recalcula valores se vieram alterações
+    const oldVal = issuance.valores?.toObject?.() ?? issuance.valores ?? {};
+    let valores = oldVal;
+    if (patch.valoresInput) {
+      const iv = patch.valoresInput;
+      const valoresInput = {
+        vServ:      iv.vServ      != null ? Number(iv.vServ)      : Number(oldVal.vServ      || 0),
+        descIncond: iv.descIncond != null ? Number(iv.descIncond) : Number(oldVal.descIncond || 0),
+        descCond:   iv.descCond   != null ? Number(iv.descCond)   : Number(oldVal.descCond   || 0),
+        issqn: {
+          tribISSQN:  oldVal.issqn?.tribISSQN  ?? 1,
+          tpRetISSQN: oldVal.issqn?.tpRetISSQN ?? 1,
+          pAliq:      iv.pAliq != null ? Number(iv.pAliq) : Number(oldVal.issqn?.pAliq || 0)
+        },
+        pis:    { aliq: oldVal.pis?.aliq    ?? 0, retido: oldVal.pis?.retido    ?? false },
+        cofins: { aliq: oldVal.cofins?.aliq ?? 0, retido: oldVal.cofins?.retido ?? false },
+        irrf:   { aliq: oldVal.irrf?.aliq   ?? 0, retido: oldVal.irrf?.retido   ?? false },
+        csll:   { aliq: oldVal.csll?.aliq   ?? 0, retido: oldVal.csll?.retido   ?? false },
+        cp:     { aliq: oldVal.cp?.aliq     ?? 0, retido: oldVal.cp?.retido     ?? false }
+      };
+      valores = computeValues(valoresInput);
+    }
+
+    // Valida campos mínimos após edição
+    const prestador = issuance.prestador?.toObject?.() ?? issuance.prestador;
+    const validationErrors = validateForIssuance({ config, company: { document: prestador?.document, name: prestador?.nome }, prestador, servico, valores });
+    if (validationErrors.length) {
+      throw Object.assign(new Error(validationErrors.join('; ')), { status: 422, details: validationErrors });
+    }
+
+    // Regenera XML com os dados atualizados, mantendo nDPS/serie originais
+    const regTrib = {
+      opSimpNac:  config.opSimpNac,
+      regApTribSN: config.regApTribSN,
+      regEspTrib:  config.regEspTrib
+    };
+    const { xml: dpsXmlPlain, dpsId } = buildDpsXml({
+      cLocEmi:  config.cMun,
+      tpAmb:    config.ambiente,
+      tpEmit:   issuance.tpEmit,
+      verAplic: config.verAplic,
+      serie:    issuance.serie,
+      nDPS:     issuance.nDPS,
+      dCompet,
+      dhEmi,
+      prestador,
+      tomador,
+      servico,
+      valores,
+      regTrib
+    });
+
+    const cert = certificateService.loadStoredCertificate(config.certificate);
+    const dpsXmlSigned = signDps(dpsXmlPlain, dpsId, cert);
+
+    // Persiste os dados corrigidos e o novo XML
+    issuance.tomador         = tomador;
+    issuance.servico         = servico;
+    issuance.valores         = valores;
+    issuance.dCompet         = dCompet;
+    issuance.dhEmi           = dhEmi;
+    issuance.dpsId           = dpsId;
+    issuance.xmlDpsAssinado  = dpsXmlSigned;
+    issuance.xmlNfseRetorno  = null;
+    issuance.mensagensRetorno = [];
+    issuance.pushStatus('rejected', 'Dados corrigidos — XML regenerado. Pronto para retransmissão.');
+    await issuance.save();
+
+    return issuance;
+  }
+
+  /**
    * Retransmite uma DPS já assinada ao webservice da prefeitura.
    * Permitido apenas para issuances com status 'error' ou 'rejected'.
    */

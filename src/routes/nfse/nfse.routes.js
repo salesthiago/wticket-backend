@@ -13,6 +13,7 @@ router.post('/from-service-order/:serviceOrderId', nfseController.issueFromServi
 router.get('/logs', nfseController.findLogs);
 
 router.get('/:id', nfseController.findById);
+router.put('/:id/edit', nfseController.editIssuance);
 router.post('/:id/retransmit', nfseController.retransmit);
 router.get('/:id/xml', nfseController.getXml); // ?type=dps|nfse
 router.get('/:id/pdf', nfseController.getPdf);
