@@ -419,7 +419,6 @@ class NfseIssuerService {
 
     return { success: false, mensagens };
   }
-}
 
   /**
    * Retransmite uma DPS já assinada ao webservice da prefeitura.
