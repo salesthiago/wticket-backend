@@ -50,6 +50,12 @@ function validatePlanBody(body, { partial = false } = {}) {
 
   if (body.isActive !== undefined) data.isActive = !!body.isActive;
 
+  if (body.trialDays !== undefined) {
+    const trialDays = Number(body.trialDays);
+    if (isNaN(trialDays) || trialDays < 0) errors.push('trialDays deve ser >= 0');
+    else data.trialDays = Math.trunc(trialDays);
+  }
+
   return { data, errors };
 }
 
