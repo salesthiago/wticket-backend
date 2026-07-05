@@ -3,6 +3,7 @@ import http from "http";
 import app from "./app.js";
 import { connectWithRetry } from "./config/database.js";
 import logger from "./utils/logger.js";
+import pendingDebtNotifierJob from "./jobs/pending-debt-notifier.job.js";
 // import { Server } from "socket.io";
 // import { verifyToken } from "./middleware/auth.middleware.js";
 // import { initSocket } from "./services/socket.service.js";
@@ -69,6 +70,8 @@ logger.info("══════════════════════�
 //
 // logger.info("🔌 Inicializando Socket.IO handlers...");
 // initSocket(io);
+
+pendingDebtNotifierJob.start();
 
 server.listen(PORT, () => {
   logger.info("\n════════════════════════════════════════════════════════════");

@@ -81,6 +81,8 @@ const CompanySchema = new mongoose.Schema({
   storageConfig: { type: StorageConfigSchema, default: null },
   logo: { type: LogoSchema, default: null },
   trialEndsAt: { type: Date },
+  // Última vez que um e-mail de débito pendente foi enviado (evita reenvio diário).
+  lastDebtNotificationAt: { type: Date, default: null },
   // Quando true, o super_admin isenta a empresa de assinatura:
   // todos os módulos cadastrados ficam ativos independente de pagamento.
   subscriptionExempt: { type: Boolean, default: false }

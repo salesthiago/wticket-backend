@@ -7,6 +7,7 @@ import User from '../models/user.model.js';
 import { encryptSecret } from '../utils/crypto.util.js';
 import * as s3Service from '../services/storage/s3.service.js';
 import subscriptionService from '../services/billing/subscription.service.js';
+import emailService from '../services/email/email.service.js';
 
 const isSuperAdmin = (req) => req.user?.role === 'super_admin';
 const isOwnCompany = (req) => req.user?.companyId && req.params.id === String(req.user.companyId);
@@ -294,6 +295,13 @@ export const register = async (req, res) => {
     });
 
     await companyRepository.update(company._id, { ownerId: owner._id });
+
+    // E-mail de boas-vindas (best-effort): não bloqueia o cadastro se falhar.
+    try {
+      await emailService.sendTemplated('welcome', owner.email, { name: owner.name, companyName: company.name });
+    } catch (err) {
+      logger.warn(`Company register :: welcome email não enviado p/ empresa ${company._id}: ${err.message}`);
+    }
 
     // Gera a cobrança já no cadastro (best-effort): se a AbacatePay não estiver
     // configurada ou falhar, o cadastro NÃO é bloqueado — o checkout vem null e o

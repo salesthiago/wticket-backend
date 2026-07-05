@@ -1,8 +1,12 @@
 
 import jwt from 'jsonwebtoken';
+import crypto from 'crypto';
 import User from '../models/user.model.js';
 import Company from '../models/company.model.js';
 import logger from '../utils/logger.js';
+import emailService from '../services/email/email.service.js';
+
+const RESET_TOKEN_EXPIRES_MINUTES = 60;
 
 
 
@@ -79,6 +83,63 @@ export const login = async (req, res) => {
     });
   } catch (err) {
     logger.error('Login error', err);
+    res.status(500).json({ message: 'Internal server error' });
+  }
+};
+
+const GENERIC_FORGOT_MESSAGE = 'Se o e-mail informado estiver cadastrado, você receberá um link para redefinir a senha.';
+
+export const forgotPassword = async (req, res) => {
+  try {
+    const { email } = req.body;
+    if (!email) return res.status(400).json({ message: 'email é obrigatório' });
+
+    const user = await User.findOne({ email });
+    if (user) {
+      const token = crypto.randomBytes(32).toString('hex');
+      user.passwordResetTokenHash = crypto.createHash('sha256').update(token).digest('hex');
+      user.passwordResetExpiresAt = new Date(Date.now() + RESET_TOKEN_EXPIRES_MINUTES * 60 * 1000);
+      await user.save();
+
+      const link = `${process.env.FRONTEND_URL}/reset-password?token=${token}`;
+      try {
+        await emailService.sendTemplated('forgot_password', user.email, {
+          name: user.name,
+          link,
+          expiresInMinutes: RESET_TOKEN_EXPIRES_MINUTES
+        });
+      } catch (err) {
+        logger.warn(`forgotPassword :: e-mail não enviado p/ ${user.email}: ${err.message}`);
+      }
+    }
+
+    return res.json({ message: GENERIC_FORGOT_MESSAGE });
+  } catch (err) {
+    logger.error('forgotPassword error', err);
+    res.status(500).json({ message: 'Internal server error' });
+  }
+};
+
+export const resetPassword = async (req, res) => {
+  try {
+    const { token, password } = req.body;
+    if (!token || !password) return res.status(400).json({ message: 'token e password são obrigatórios' });
+
+    const tokenHash = crypto.createHash('sha256').update(token).digest('hex');
+    const user = await User.findOne({
+      passwordResetTokenHash: tokenHash,
+      passwordResetExpiresAt: { $gt: new Date() }
+    });
+    if (!user) return res.status(400).json({ message: 'Token inválido ou expirado' });
+
+    user.password = password;
+    user.passwordResetTokenHash = null;
+    user.passwordResetExpiresAt = null;
+    await user.save();
+
+    return res.json({ message: 'Senha redefinida com sucesso' });
+  } catch (err) {
+    logger.error('resetPassword error', err);
     res.status(500).json({ message: 'Internal server error' });
   }
 };
