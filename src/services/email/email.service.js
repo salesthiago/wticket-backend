@@ -25,14 +25,33 @@ const DEFAULT_TEMPLATES = {
 
 function getDefaultConfig() {
   const cfg = {
-    region: process.env.SES_REGION,
-    accessKeyId: process.env.SES_ACCESS_KEY,
-    secretAccessKey: process.env.SES_SECRET_KEY,
-    fromEmail: process.env.SES_FROM_EMAIL,
-    fromName: process.env.SES_FROM_NAME || 'WTicket'
+    region: process.env.SES_REGION?.trim(),
+    accessKeyId: process.env.SES_ACCESS_KEY?.trim(),
+    secretAccessKey: process.env.SES_SECRET_KEY?.trim(),
+    fromEmail: process.env.SES_FROM_EMAIL?.trim(),
+    fromName: process.env.SES_FROM_NAME?.trim() || 'WTicket'
   };
   if (!cfg.region || !cfg.accessKeyId || !cfg.secretAccessKey || !cfg.fromEmail) return null;
   return cfg;
+}
+
+/** Valida o formato das credenciais antes de persistir — pega cópias com espaço/quebra de linha
+ *  que passariam despercebidas e só falhariam depois, na AWS, com um erro de assinatura críptico. */
+export function validateCredentials({ accessKeyId, secretKey }) {
+  const errors = [];
+  if (accessKeyId !== undefined) {
+    const trimmed = accessKeyId.trim();
+    if (trimmed.length < 16 || trimmed.length > 128 || trimmed !== accessKeyId) {
+      errors.push('Access Key ID inválido: verifique se não há espaços ou quebras de linha extras');
+    }
+  }
+  if (secretKey && !secretKey.startsWith('••')) {
+    const trimmed = secretKey.trim();
+    if (trimmed.length !== 40 || trimmed !== secretKey) {
+      errors.push(`Secret Access Key inválida: esperado 40 caracteres, recebido ${trimmed.length}. Copie novamente da AWS, sem espaços ou quebras de linha.`);
+    }
+  }
+  return errors;
 }
 
 class EmailService {
@@ -56,12 +75,12 @@ class EmailService {
     const existing = await this.getSettings();
     const value = existing?.value || {};
 
-    if (region !== undefined) value.region = region;
-    if (accessKeyId !== undefined) value.accessKeyId = accessKeyId;
-    if (fromEmail !== undefined) value.fromEmail = fromEmail;
-    if (fromName !== undefined) value.fromName = fromName;
+    if (region !== undefined) value.region = region.trim();
+    if (accessKeyId !== undefined) value.accessKeyId = accessKeyId.trim();
+    if (fromEmail !== undefined) value.fromEmail = fromEmail.trim();
+    if (fromName !== undefined) value.fromName = fromName.trim();
     // Só sobrescreve a secret se um novo valor foi enviado (não é a máscara)
-    if (secretKey && !secretKey.startsWith('••')) value.secretKeyEnc = encryptSecret(secretKey);
+    if (secretKey && !secretKey.startsWith('••')) value.secretKeyEnc = encryptSecret(secretKey.trim());
 
     if (existing) {
       existing.value = value;

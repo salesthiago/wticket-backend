@@ -1,5 +1,5 @@
 import logger from '../utils/logger.js';
-import emailService from '../services/email/email.service.js';
+import emailService, { validateCredentials } from '../services/email/email.service.js';
 
 export const getConfig = async (req, res) => {
   try {
@@ -17,6 +17,9 @@ export const updateConfig = async (req, res) => {
     if (status && !['enabled', 'disabled'].includes(status)) {
       return res.status(422).json({ message: 'status deve ser "enabled" ou "disabled"' });
     }
+    const credErrors = validateCredentials({ accessKeyId, secretKey });
+    if (credErrors.length) return res.status(422).json({ message: credErrors.join('; '), errors: credErrors });
+
     await emailService.saveConfig({ status, region, accessKeyId, secretKey, fromEmail, fromName });
     return res.json(await emailService.getConfigForAdmin());
   } catch (err) {
