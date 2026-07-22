@@ -22,9 +22,11 @@ class TicketRepository {
         .populate('assignedTo', 'name email')
         .populate('categoryId', 'name color')
         .populate('subjectId', 'name')
-        .populate('statusId', 'name label color')
+        .populate('statusId', 'name label color isDone isInProgress')
         .populate('appointmentId')
         .populate('serviceOrderId', 'orderNumber status')
+        .populate('projectId', 'title projectNumber')
+        .populate('customerId', 'name phone email')
         .populate('responses.respondedBy', 'name email');
     } catch (error) {
       throw new Error(error.message);
@@ -42,18 +44,20 @@ class TicketRepository {
     }
   }
 
-  async findAll({ categoryId = null, statusId = null, assignedTo = null, companyId = null } = {}) {
+  async findAll({ categoryId = null, statusId = null, assignedTo = null, companyId = null, projectId = null } = {}) {
     try {
       const query = { companyId: companyId ?? null };
       if (categoryId) query.categoryId = categoryId;
       if (statusId) query.statusId = statusId;
       if (assignedTo) query.assignedTo = assignedTo;
+      if (projectId) query.projectId = projectId;
 
       return await Ticket.find(query)
         .populate('categoryId', 'name color')
         .populate('subjectId', 'name')
-        .populate('statusId', 'name label color')
+        .populate('statusId', 'name label color isDone isInProgress')
         .populate('assignedTo', 'name email')
+        .populate('customerId', 'name phone email')
         .populate('saleItems.product', 'name price sku')
         .sort({ createdAt: -1 })
         .exec();

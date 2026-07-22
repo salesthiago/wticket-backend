@@ -1,6 +1,7 @@
 import logger from "../utils/logger.js";
 import ticketRepository from "../repositories/ticket.repository.js";
 import ticketStatusRepository from "../repositories/ticket-status.repository.js";
+import customerRepository from "../repositories/customer.repository.js";
 
 export const findAll = async (req, res) => {
   try {
@@ -17,7 +18,10 @@ export const findAll = async (req, res) => {
 export const create = async (req, res) => {
   try {
     const companyId = req.user.companyId ?? null;
-    const { contactNumber, contactName, categoryId, subjectId, statusId, priority, assignedTo, notes, tags } = req.body;
+    const {
+      contactNumber, contactName, customerId, categoryId, subjectId, statusId,
+      priority, assignedTo, notes, tags, projectId, startDate, endDate
+    } = req.body;
 
     let resolvedStatusId = statusId;
     if (!resolvedStatusId) {
@@ -25,17 +29,32 @@ export const create = async (req, res) => {
       if (defaultStatus) resolvedStatusId = defaultStatus._id;
     }
 
+    // Quando um cliente é selecionado, deriva nome/telefone dele (em vez de
+    // exigir digitação manual) mantendo o vínculo via customerId.
+    let resolvedContactNumber = contactNumber;
+    let resolvedContactName = contactName;
+    if (customerId && companyId) {
+      const customer = await customerRepository.findById(companyId, customerId);
+      if (!customer) return res.status(422).json({ message: 'Cliente não encontrado' });
+      resolvedContactNumber = customer.phone;
+      resolvedContactName = customer.name;
+    }
+
     const ticket = await ticketRepository.create({
       companyId,
-      contactNumber,
-      contactName,
+      contactNumber: resolvedContactNumber,
+      contactName: resolvedContactName,
+      customerId: customerId || null,
       categoryId,
       subjectId,
       statusId: resolvedStatusId,
       priority,
       assignedTo,
       notes,
-      tags
+      tags,
+      projectId: projectId || null,
+      startDate,
+      endDate
     });
 
     return res.status(201).json(ticket);

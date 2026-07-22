@@ -14,6 +14,14 @@ const TicketSchema = new mongoose.Schema({
   contactName: {
     type: String
   },
+  // Cliente selecionado no cadastro do ticket (substitui a digitação manual de
+  // telefone/nome quando o atendente escolhe um cliente já cadastrado)
+  customerId: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'Customer',
+    default: null,
+    index: true
+  },
   // sessionName desabilitado: era usado pelo WhatsApp (será serviço separado)
   // sessionName: {
   //   type: String,
@@ -92,6 +100,31 @@ const TicketSchema = new mongoose.Schema({
     type: mongoose.Schema.Types.ObjectId,
     ref: 'ServiceOrder'
   },
+  // Vincula este ticket como uma tarefa de um Projeto
+  projectId: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'Project',
+    default: null,
+    index: true
+  },
+  // Horas trabalhadas nesta tarefa, somadas na tela do projeto
+  workedHours: {
+    type: Number,
+    default: 0,
+    min: 0
+  },
+  // Número da tarefa, gerado automaticamente a partir do número do projeto
+  // (ex.: PRJ-2026-00001-01) quando o ticket é criado dentro de um projeto
+  taskNumber: {
+    type: String,
+    index: true
+  },
+  startDate: {
+    type: Date
+  },
+  endDate: {
+    type: Date
+  },
   notes: {
     type: String
   },
@@ -111,5 +144,19 @@ TicketSchema.index({ statusId: 1 });
 TicketSchema.index({ categoryId: 1 });
 TicketSchema.index({ assignedTo: 1 });
 TicketSchema.index({ createdAt: -1 });
+
+// Gera o número da tarefa a partir do número do projeto (contrato) ao qual
+// o ticket pertence, ex.: PRJ-2026-00001-01, -02, ... (sequência por projeto)
+TicketSchema.pre('save', async function (next) {
+  if (this.isNew && this.projectId && !this.taskNumber) {
+    const Project = mongoose.model('Project');
+    const project = await Project.findById(this.projectId).select('projectNumber').lean();
+    if (project?.projectNumber) {
+      const existingCount = await mongoose.model('Ticket').countDocuments({ projectId: this.projectId });
+      this.taskNumber = `${project.projectNumber}-${String(existingCount + 1).padStart(2, '0')}`;
+    }
+  }
+  next();
+});
 
 export default mongoose.model('Ticket', TicketSchema);

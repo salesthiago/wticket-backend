@@ -1,6 +1,6 @@
 import mongoose from 'mongoose';
 
-const TicketStatusSchema = new mongoose.Schema({
+const ProjectStatusSchema = new mongoose.Schema({
   companyId: {
     type: mongoose.Schema.Types.ObjectId,
     ref: 'Company',
@@ -25,13 +25,9 @@ const TicketStatusSchema = new mongoose.Schema({
     type: Boolean,
     default: false
   },
-  // Classificação usada para calcular o % de conclusão do projeto: tarefas
-  // com isDone contam 100%, com isInProgress contam 50%, as demais 0%.
-  isDone: {
-    type: Boolean,
-    default: false
-  },
-  isInProgress: {
+  // Marca este status como um encerramento de projeto (ex.: Concluído, Cancelado).
+  // Usado para preencher/limpar Project.closedAt automaticamente ao trocar de status.
+  isClosingStatus: {
     type: Boolean,
     default: false
   },
@@ -48,7 +44,7 @@ const TicketStatusSchema = new mongoose.Schema({
 });
 
 // Garante que só um status seja o padrão por vez dentro da mesma empresa
-TicketStatusSchema.pre('save', async function (next) {
+ProjectStatusSchema.pre('save', async function (next) {
   if (this.isDefault && this.isModified('isDefault')) {
     await this.constructor.updateMany(
       { _id: { $ne: this._id }, companyId: this.companyId ?? null },
@@ -58,4 +54,4 @@ TicketStatusSchema.pre('save', async function (next) {
   next();
 });
 
-export default mongoose.model('TicketStatus', TicketStatusSchema);
+export default mongoose.model('ProjectStatus', ProjectStatusSchema);

@@ -8,6 +8,8 @@ import ticketRoutes from './ticket.routes.js'
 import ticketCategoryRoutes from './ticket-category.routes.js'
 import ticketSubjectRoutes from './ticket-subject.routes.js'
 import ticketStatusRoutes from './ticket-status.routes.js'
+import projectRoutes from './project.routes.js'
+import projectStatusRoutes from './project-status.routes.js'
 import homeRoutes from './home.routes.js'
 import profileRoutes from './profile.routes.js'
 // import botConfig from './bot-config.routes.js' // desabilitado: dependente do WhatsApp
@@ -43,6 +45,8 @@ router.use('/tickets', ticketRoutes);
 router.use('/ticket-categories', ticketCategoryRoutes);
 router.use('/ticket-subjects', ticketSubjectRoutes);
 router.use('/ticket-statuses', ticketStatusRoutes);
+router.use('/projects', projectRoutes);
+router.use('/project-statuses', projectStatusRoutes);
 router.use('/home', homeRoutes);
 router.use('/profile', profileRoutes);
 // router.use('/bot-config', botConfig); // desabilitado: dependente do WhatsApp
