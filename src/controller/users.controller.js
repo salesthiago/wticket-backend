@@ -37,7 +37,7 @@ export const findAll = async (req, res) => {
 
 export const create = async (req, res) => {
   try {
-    const { name, email, password, status, role } = req.body;
+    const { name, email, password, status, role, customerId } = req.body;
     if (!email || !password) return res.status(400).json({ message: 'email and password required' });
 
     const existing = await User.findOne({ email });
@@ -69,7 +69,8 @@ export const create = async (req, res) => {
       password,
       status,
       role: safeRole,
-      companyId
+      companyId,
+      customerId: customerId || null
     });
     return res.status(200).json(userCreated);
   } catch (err) {

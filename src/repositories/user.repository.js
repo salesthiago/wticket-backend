@@ -4,7 +4,7 @@ import bcrypt from 'bcrypt';
 const SALT_ROUNDS = 10;
 
 class UserRepository {
-  async create({ name, email, role, password, status, companyId }) {
+  async create({ name, email, role, password, status, companyId, customerId }) {
     try {
       const userCreated = new User();
       userCreated.name = name;
@@ -13,6 +13,7 @@ class UserRepository {
       userCreated.status = status;
       userCreated.password = password;
       if (companyId) userCreated.companyId = companyId;
+      if (customerId) userCreated.customerId = customerId;
 
       return await userCreated.save();
     } catch (error) {

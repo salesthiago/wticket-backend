@@ -21,8 +21,10 @@ class ProjectRepository {
       .sort({ createdAt: -1 });
   }
 
-  async findById(id, { companyId = null } = {}) {
-    return Project.findOne({ _id: id, companyId: companyId ?? null })
+  async findById(id, { companyId = null, customerId = null } = {}) {
+    const query = { _id: id, companyId: companyId ?? null };
+    if (customerId) query.customerId = customerId;
+    return Project.findOne(query)
       .populate('statusId', 'name label color isClosingStatus')
       .populate('customerId', 'name phone email');
   }

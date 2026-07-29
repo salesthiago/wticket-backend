@@ -25,7 +25,7 @@ class TicketRepository {
         .populate('statusId', 'name label color isDone isInProgress')
         .populate('appointmentId')
         .populate('serviceOrderId', 'orderNumber status')
-        .populate('projectId', 'title projectNumber')
+        .populate('projectId', 'title projectNumber customerId')
         .populate('customerId', 'name phone email')
         .populate('responses.respondedBy', 'name email');
     } catch (error) {
@@ -44,13 +44,21 @@ class TicketRepository {
     }
   }
 
-  async findAll({ categoryId = null, statusId = null, assignedTo = null, companyId = null, projectId = null } = {}) {
+  async findAll({ categoryId = null, statusId = null, assignedTo = null, companyId = null, projectId = null, scopeCustomerId = null, scopeProjectIds = null } = {}) {
     try {
       const query = { companyId: companyId ?? null };
       if (categoryId) query.categoryId = categoryId;
       if (statusId) query.statusId = statusId;
       if (assignedTo) query.assignedTo = assignedTo;
       if (projectId) query.projectId = projectId;
+      // Escopo de acesso de cliente: só tickets ligados diretamente a ele ou
+      // aos projetos dele (ver ticket.controller.js).
+      if (scopeCustomerId) {
+        query.$or = [
+          { customerId: scopeCustomerId },
+          { projectId: { $in: scopeProjectIds || [] } }
+        ];
+      }
 
       return await Ticket.find(query)
         .populate('categoryId', 'name color')
@@ -80,14 +88,17 @@ class TicketRepository {
     }
   }
 
-  async addResponse(ticketId, { content, respondedBy }) {
+  async addResponse(ticketId, { content, respondedBy, hoursSpent }) {
     try {
+      const hours = Number(hoursSpent) > 0 ? Number(hoursSpent) : 0;
       return await Ticket.findByIdAndUpdate(
         ticketId,
         {
           $push: {
-            responses: { content, respondedBy, respondedAt: new Date() }
-          }
+            responses: { content, respondedBy, respondedAt: new Date(), hoursSpent: hours }
+          },
+          // Mantém workedHours como a soma acumulada das horas lançadas por resposta.
+          $inc: { workedHours: hours }
         },
         { new: true }
       )

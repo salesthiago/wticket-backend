@@ -19,6 +19,15 @@ const UserSchema = new mongoose.Schema({
     default: null,
     index: true
   },
+  // Quando setado, restringe este login a ver apenas os Projetos vinculados
+  // a este Cliente e os Tickets desses projetos ou vinculados diretamente a
+  // ele (acesso tipo "portal do cliente").
+  customerId: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'Customer',
+    default: null,
+    index: true
+  },
   passwordResetTokenHash: { type: String, default: null },
   passwordResetExpiresAt: { type: Date, default: null },
 }, { timestamps: true });

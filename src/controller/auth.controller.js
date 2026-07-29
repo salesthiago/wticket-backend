@@ -22,6 +22,7 @@ const generateToken = (user, { companyId, modules } = {}) => {
     email: user.email,
     role: user.role,
     companyId: companyId ? companyId.toString() : null,
+    customerId: user.customerId ? user.customerId.toString() : null,
     modules: modules || []
   };
   return jwt.sign(payload, JWT_SECRET, { expiresIn: JWT_EXPIRES_IN });
@@ -77,7 +78,8 @@ export const login = async (req, res) => {
         name: user.name,
         email: user.email,
         role: user.role,
-        companyId: companyId || null
+        companyId: companyId || null,
+        customerId: user.customerId || null
       },
       modules
     });

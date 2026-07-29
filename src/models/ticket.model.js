@@ -59,7 +59,9 @@ const TicketSchema = new mongoose.Schema({
   responses: [{
     content: { type: String, required: true },
     respondedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
-    respondedAt: { type: Date, default: Date.now }
+    respondedAt: { type: Date, default: Date.now },
+    // Horas gastas nesta atualização — somadas em workedHours a cada resposta
+    hoursSpent: { type: Number, default: 0, min: 0 }
   }],
   lastMessage: {
     type: Date

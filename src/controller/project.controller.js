@@ -7,8 +7,11 @@ import { buildProjectsWorkbook } from '../services/project-excel.service.js';
 export const findAll = async (req, res) => {
   try {
     const companyId = req.user.companyId ?? null;
+    const scopeCustomerId = req.user?.customerId || null;
     const { statusId, priority, customerId } = req.query;
-    const projects = await projectRepository.findAll({ companyId, statusId, priority, customerId });
+    // Login de cliente: ignora qualquer customerId vindo da query e força o próprio.
+    const effectiveCustomerId = scopeCustomerId || customerId;
+    const projects = await projectRepository.findAll({ companyId, statusId, priority, customerId: effectiveCustomerId });
     return res.status(200).json(projects);
   } catch (err) {
     logger.error('project findAll error >>>', err);
@@ -19,6 +22,9 @@ export const findAll = async (req, res) => {
 export const create = async (req, res) => {
   try {
     const companyId = req.user.companyId ?? null;
+    if (req.user?.customerId) {
+      return res.status(403).json({ message: 'Acesso de cliente não pode gerenciar projetos' });
+    }
     const { title, description, startDate, endDate, priority, statusId, customerId, hourlyRate } = req.body;
 
     if (!title) return res.status(422).json({ message: 'Título é obrigatório' });
@@ -51,8 +57,9 @@ export const create = async (req, res) => {
 export const findById = async (req, res) => {
   try {
     const companyId = req.user.companyId ?? null;
+    const scopeCustomerId = req.user?.customerId || null;
     const { id } = req.params;
-    const project = await projectRepository.findById(id, { companyId });
+    const project = await projectRepository.findById(id, { companyId, customerId: scopeCustomerId });
     if (!project) return res.status(404).json({ message: 'Projeto não encontrado' });
 
     const stats = await projectRepository.getStats(id, companyId);
@@ -71,6 +78,9 @@ export const findById = async (req, res) => {
 export const update = async (req, res) => {
   try {
     const companyId = req.user.companyId ?? null;
+    if (req.user?.customerId) {
+      return res.status(403).json({ message: 'Acesso de cliente não pode gerenciar projetos' });
+    }
     const { id } = req.params;
     if (!req.body) return res.status(422).json({ message: 'Body is empty' });
     const updated = await projectRepository.update(id, req.body, { companyId });
@@ -85,6 +95,9 @@ export const update = async (req, res) => {
 export const destroy = async (req, res) => {
   try {
     const companyId = req.user.companyId ?? null;
+    if (req.user?.customerId) {
+      return res.status(403).json({ message: 'Acesso de cliente não pode gerenciar projetos' });
+    }
     const { id } = req.params;
     const deleted = await projectRepository.deleteProject(id, { companyId });
     if (!deleted) return res.status(404).json({ message: 'Projeto não encontrado' });
@@ -98,9 +111,10 @@ export const destroy = async (req, res) => {
 export const exportExcel = async (req, res) => {
   try {
     const companyId = req.user.companyId ?? null;
+    const scopeCustomerId = req.user?.customerId || null;
     const { id } = req.params;
 
-    const project = await projectRepository.findById(id, { companyId });
+    const project = await projectRepository.findById(id, { companyId, customerId: scopeCustomerId });
     if (!project) return res.status(404).json({ message: 'Projeto não encontrado' });
 
     const tasks = await ticketRepository.findAll({ projectId: project._id, companyId });
@@ -122,7 +136,13 @@ export const exportExcel = async (req, res) => {
 export const findTickets = async (req, res) => {
   try {
     const companyId = req.user.companyId ?? null;
+    const scopeCustomerId = req.user?.customerId || null;
     const { id } = req.params;
+
+    // Garante que o projeto pertence ao escopo do cliente antes de listar suas tarefas.
+    const project = await projectRepository.findById(id, { companyId, customerId: scopeCustomerId });
+    if (!project) return res.status(404).json({ message: 'Projeto não encontrado' });
+
     const tickets = await ticketRepository.findAll({ projectId: id, companyId });
     return res.status(200).json(tickets);
   } catch (err) {
