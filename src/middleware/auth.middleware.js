@@ -73,3 +73,13 @@ export const requireRole = (...allowedRoles) => (req, res, next) => {
   if (allowedRoles.includes(role)) return next();
   return res.status(403).json({ message: `Role '${role}' is not allowed for this resource` });
 };
+
+// Blocks logins with a customerId linked (client-portal access) from any
+// route mounted after this middleware in routes/index.js — those logins are
+// only allowed to reach Projects/Tickets (mounted before this gate runs).
+export const blockCustomerScope = (req, res, next) => {
+  if (req.user?.customerId) {
+    return res.status(403).json({ message: 'Acesso de cliente restrito a Projetos e Tickets' });
+  }
+  next();
+};

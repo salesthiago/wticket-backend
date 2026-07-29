@@ -1,5 +1,6 @@
 
 import express from 'express'
+import { authenticate, blockCustomerScope } from '../middleware/auth.middleware.js'
 import usersRoutes from './users.routes.js'
 import authRoutes from './auth.routes.js';
 // import whatsappRoutes from './whatsapp.routes.js' // desabilitado: será serviço separado
@@ -35,20 +36,30 @@ import swaggerUi from 'swagger-ui-express'
 const router = express.Router();
 
 router.use('/auth', authRoutes);
-router.use('/companies', companyRoutes);
-router.use('/modules', moduleRoutes);
-router.use('/plans', planRoutes);
-router.use('/users', usersRoutes);
-// router.use('/whatsapp', whatsappRoutes); // desabilitado: será serviço separado
-router.use('/contacts', contactRoutes);
+
+// A partir daqui todo mundo passa por authenticate. Logins de cliente (com
+// customerId vinculado — ver models/user.model.js) só podem prosseguir além
+// de blockCustomerScope se a rota for uma das liberadas logo abaixo
+// (Projetos/Tickets + o próprio perfil).
+router.use(authenticate);
+
 router.use('/tickets', ticketRoutes);
 router.use('/ticket-categories', ticketCategoryRoutes);
 router.use('/ticket-subjects', ticketSubjectRoutes);
 router.use('/ticket-statuses', ticketStatusRoutes);
 router.use('/projects', projectRoutes);
 router.use('/project-statuses', projectStatusRoutes);
-router.use('/home', homeRoutes);
 router.use('/profile', profileRoutes);
+
+router.use(blockCustomerScope);
+
+router.use('/companies', companyRoutes);
+router.use('/modules', moduleRoutes);
+router.use('/plans', planRoutes);
+router.use('/users', usersRoutes);
+// router.use('/whatsapp', whatsappRoutes); // desabilitado: será serviço separado
+router.use('/contacts', contactRoutes);
+router.use('/home', homeRoutes);
 // router.use('/bot-config', botConfig); // desabilitado: dependente do WhatsApp
 router.use('/appointments', appointmentRoutes);
 router.use('/products', productRoutes);
