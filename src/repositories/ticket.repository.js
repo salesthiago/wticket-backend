@@ -20,6 +20,7 @@ class TicketRepository {
       if (companyId) query.companyId = companyId;
       return await Ticket.findOne(query)
         .populate('assignedTo', 'name email')
+        .populate('createdBy', 'name email')
         .populate('categoryId', 'name color')
         .populate('subjectId', 'name')
         .populate('statusId', 'name label color isDone isInProgress')
@@ -106,6 +107,31 @@ class TicketRepository {
         .populate('statusId', 'name label color');
     } catch (error) {
       throw new Error('Erro ao adicionar resposta: ' + error.message);
+    }
+  }
+
+  async deleteResponse(ticketId, responseId) {
+    try {
+      const ticket = await Ticket.findById(ticketId);
+      if (!ticket) return null;
+      const response = ticket.responses.id(responseId);
+      if (!response) return null;
+      const hours = response.hoursSpent || 0;
+
+      return await Ticket.findByIdAndUpdate(
+        ticketId,
+        {
+          $pull: { responses: { _id: responseId } },
+          // Desfaz o incremento aplicado quando a resposta foi criada, para
+          // que as horas do projeto sejam recontabilizadas corretamente.
+          $inc: { workedHours: -hours }
+        },
+        { new: true }
+      )
+        .populate('responses.respondedBy', 'name email')
+        .populate('statusId', 'name label color');
+    } catch (error) {
+      throw new Error('Erro ao excluir resposta: ' + error.message);
     }
   }
 

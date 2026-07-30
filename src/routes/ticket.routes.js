@@ -10,6 +10,7 @@ router.get('/:id', authenticate, ticketController.findById);
 router.put('/:id', authenticate, ticketController.update);
 router.patch('/:id/status', authenticate, ticketController.updateStatus);
 router.post('/:id/responses', authenticate, ticketController.addResponse);
+router.delete('/:id/responses/:responseId', authenticate, ticketController.deleteResponse);
 router.patch('/:id/sale-items', authenticate, ticketController.updateSaleItems);
 router.delete('/:id/destroy', authenticate, ticketController.destroy);
 

@@ -48,6 +48,13 @@ const TicketSchema = new mongoose.Schema({
     type: mongoose.Schema.Types.ObjectId,
     ref: 'User'
   },
+  // Usuário que criou este ticket/tarefa — usado para permitir exclusão
+  // (autor ou administrador) sem depender só do escopo de empresa/cliente.
+  createdBy: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'User',
+    default: null
+  },
   tags: [{
     type: String
   }],

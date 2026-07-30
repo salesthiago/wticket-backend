@@ -14,6 +14,16 @@ function ticketBelongsToScope(ticket, scopeCustomerId) {
   return ticketCustomerId === scopeCustomerId || projectCustomerId === scopeCustomerId;
 }
 
+// Exclusão de tarefa/resposta: liberada para quem criou o registro ou para
+// administradores (administrator/company_admin/super_admin).
+const ADMIN_ROLES = ['administrator', 'company_admin', 'super_admin'];
+function canDelete(ownerId, req) {
+  if (ADMIN_ROLES.includes(req.user?.role)) return true;
+  if (!ownerId) return false;
+  const userId = req.user?.sub;
+  return userId && ownerId.toString() === userId.toString();
+}
+
 async function getScopeProjectIds(companyId, scopeCustomerId) {
   if (!scopeCustomerId) return [];
   const projects = await projectRepository.findAll({ companyId, customerId: scopeCustomerId });
@@ -95,7 +105,8 @@ export const create = async (req, res) => {
       tags,
       projectId: projectId || null,
       startDate,
-      endDate
+      endDate,
+      createdBy: req.user?.sub || null
     });
 
     return res.status(201).json(ticket);
@@ -228,11 +239,43 @@ export const destroy = async (req, res) => {
       return res.status(404).json({ message: "Ticket not found" });
     }
 
+    const ownerId = existing.createdBy?._id || existing.createdBy;
+    if (!canDelete(ownerId, req)) {
+      return res.status(403).json({ message: 'Somente quem criou a tarefa ou um administrador pode excluí-la' });
+    }
+
     const ticket = await ticketRepository.deleteTicket(id, { companyId });
     if (!ticket) return res.status(404).json({ message: "Ticket not found" });
     return res.status(200).json({ message: 'Ticket deletado com sucesso' });
   } catch (err) {
     logger.error("ticket destroy error", err);
     return res.status(500).json({ message: "Internal server error" });
+  }
+};
+
+export const deleteResponse = async (req, res) => {
+  try {
+    const companyId = req.user.companyId;
+    const { id, responseId } = req.params;
+    if (!id || !responseId) return res.status(422).json({ message: 'ID not found' });
+
+    const ticket = await ticketRepository.findById(id, { companyId });
+    if (!ticket || !ticketBelongsToScope(ticket, req.user?.customerId)) {
+      return res.status(404).json({ message: 'Ticket not found' });
+    }
+
+    const response = ticket.responses.id(responseId);
+    if (!response) return res.status(404).json({ message: 'Resposta não encontrada' });
+
+    const ownerId = response.respondedBy?._id || response.respondedBy;
+    if (!canDelete(ownerId, req)) {
+      return res.status(403).json({ message: 'Somente quem registrou a resposta ou um administrador pode excluí-la' });
+    }
+
+    const updated = await ticketRepository.deleteResponse(id, responseId);
+    return res.status(200).json(updated);
+  } catch (err) {
+    logger.error('ticket deleteResponse error', err);
+    return res.status(500).json({ message: 'Internal server error' });
   }
 };
