@@ -52,6 +52,13 @@ const ProjectSchema = new mongoose.Schema({
     type: Number,
     default: 0,
     min: 0
+  },
+  // Usuário que criou o projeto — usado para permitir exclusão (autor ou
+  // administrador), inclusive quando é o próprio cliente quem cria.
+  createdBy: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'User',
+    default: null
   }
 }, {
   timestamps: true

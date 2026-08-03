@@ -18,6 +18,7 @@ class ProjectRepository {
     return Project.find(query)
       .populate('statusId', 'name label color isClosingStatus')
       .populate('customerId', 'name phone email')
+      .populate('createdBy', 'name email')
       .sort({ createdAt: -1 });
   }
 
@@ -26,7 +27,8 @@ class ProjectRepository {
     if (customerId) query.customerId = customerId;
     return Project.findOne(query)
       .populate('statusId', 'name label color isClosingStatus')
-      .populate('customerId', 'name phone email');
+      .populate('customerId', 'name phone email')
+      .populate('createdBy', 'name email');
   }
 
   async update(id, data, { companyId = null } = {}) {
