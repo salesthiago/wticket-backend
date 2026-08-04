@@ -52,6 +52,22 @@ class ProjectRepository {
       .populate('customerId', 'name phone email');
   }
 
+  async addDocument(companyId, id, document) {
+    return Project.findOneAndUpdate(
+      { _id: id, companyId: companyId ?? null },
+      { $push: { documents: document } },
+      { new: true }
+    );
+  }
+
+  async removeDocument(companyId, id, documentId) {
+    return Project.findOneAndUpdate(
+      { _id: id, companyId: companyId ?? null },
+      { $pull: { documents: { _id: documentId } } },
+      { new: true }
+    );
+  }
+
   async deleteProject(id, { companyId = null } = {}) {
     const filter = { _id: id, companyId: companyId ?? null };
     const project = await Project.findOneAndDelete(filter);

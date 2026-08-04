@@ -1,8 +1,11 @@
+import fs from 'fs';
+import path from 'path';
 import logger from '../utils/logger.js';
 import projectRepository from '../repositories/project.repository.js';
 import projectStatusRepository from '../repositories/project-status.repository.js';
 import ticketRepository from '../repositories/ticket.repository.js';
 import { buildProjectsWorkbook } from '../services/project-excel.service.js';
+import * as s3Service from '../services/storage/s3.service.js';
 
 // Exclusão de projeto: liberada para quem criou o registro ou para
 // administradores (mesma regra usada para tickets/respostas).
@@ -178,6 +181,180 @@ export const findTickets = async (req, res) => {
     return res.status(200).json(tickets);
   } catch (err) {
     logger.error('project findTickets error >>>', err);
+    return res.status(500).json({ message: 'Internal server error' });
+  }
+};
+
+// ─── Documentos do Projeto ──────────────────────────────────────────────────
+
+// Armazena o arquivo no S3 da empresa (quando configurado) ou no disco local
+// — mesmo padrão usado para fotos de Ordem de Serviço.
+const storeProjectDocument = async ({ companyId, projectId, file, req, uploadedBy }) => {
+  const ts = Date.now();
+  const rand = Math.round(Math.random() * 1e9);
+  const ext = (file.originalname.match(/\.([A-Za-z0-9]+)$/)?.[1] || 'dat').toLowerCase();
+  const objectName = `${ts}-${rand}.${ext}`;
+
+  const useS3 = await s3Service.hasConfig(companyId);
+  if (useS3) {
+    const result = await s3Service.uploadObject({
+      companyId,
+      category: `projects/${projectId}/documents`,
+      filename: objectName,
+      body: file.buffer,
+      contentType: file.mimetype
+    });
+    return {
+      url: result.url,
+      storageKey: result.key,
+      storageBucket: result.bucket,
+      storageSource: result.source,
+      filename: file.originalname,
+      mimetype: file.mimetype,
+      size: file.size,
+      uploadedBy
+    };
+  }
+
+  // Fallback local: grava em uploads/projects/<id>/documents e serve por /uploads.
+  const dir = path.join('uploads', 'projects', String(projectId), 'documents');
+  fs.mkdirSync(dir, { recursive: true });
+  fs.writeFileSync(path.join(dir, objectName), file.buffer);
+  const baseUrl = process.env.API_URL || `${req.protocol}://${req.get('host')}`;
+  return {
+    url: `${baseUrl}/uploads/projects/${projectId}/documents/${objectName}`,
+    storageSource: 'local',
+    filename: file.originalname,
+    mimetype: file.mimetype,
+    size: file.size,
+    uploadedBy
+  };
+};
+
+const DOCUMENT_VIEW_EXPIRES_IN = 15 * 60; // 15 min
+
+// Resolve a URL de exibição/download: assinada (temporária) para objetos
+// privados no S3 (company/default), ou a URL já persistida para arquivos locais.
+const resolveDocumentViewUrl = async ({ companyId, document, expiresIn = DOCUMENT_VIEW_EXPIRES_IN }) => {
+  if (document?.storageKey && (document.storageSource === 'company' || document.storageSource === 'default')) {
+    return await s3Service.getPresignedUrl({ companyId, key: document.storageKey, expiresIn });
+  }
+  return document?.url || null;
+};
+
+const enrichDocuments = async (companyId, documents = []) => {
+  return await Promise.all(
+    documents.map(async (d) => {
+      const obj = d.toObject ? d.toObject() : { ...d };
+      try {
+        obj.viewUrl = await resolveDocumentViewUrl({ companyId, document: obj });
+      } catch (err) {
+        logger.warn('project enrichDocuments sign failed >>>', err?.message);
+        obj.viewUrl = obj.url || null;
+      }
+      return obj;
+    })
+  );
+};
+
+export const getDocuments = async (req, res) => {
+  try {
+    const companyId = req.user.companyId ?? null;
+    const scopeCustomerId = req.user?.customerId || null;
+    const { id } = req.params;
+
+    const project = await projectRepository.findById(id, { companyId, customerId: scopeCustomerId });
+    if (!project) return res.status(404).json({ message: 'Projeto não encontrado' });
+
+    const enriched = await enrichDocuments(companyId, project.documents || []);
+    return res.status(200).json(enriched);
+  } catch (err) {
+    logger.error('project getDocuments error >>>', err);
+    return res.status(500).json({ message: 'Internal server error' });
+  }
+};
+
+// Gera/renova sob demanda a URL temporária de um documento específico.
+export const getDocumentUrl = async (req, res) => {
+  try {
+    const companyId = req.user.companyId ?? null;
+    const scopeCustomerId = req.user?.customerId || null;
+    const { id, documentId } = req.params;
+
+    const project = await projectRepository.findById(id, { companyId, customerId: scopeCustomerId });
+    if (!project) return res.status(404).json({ message: 'Projeto não encontrado' });
+
+    const document = project.documents.id(documentId);
+    if (!document) return res.status(404).json({ message: 'Documento não encontrado' });
+
+    const url = await resolveDocumentViewUrl({ companyId, document: document.toObject() });
+    if (!url) return res.status(404).json({ message: 'URL do documento indisponível' });
+
+    return res.status(200).json({ url, expiresIn: DOCUMENT_VIEW_EXPIRES_IN });
+  } catch (err) {
+    logger.error('project getDocumentUrl error >>>', err);
+    return res.status(500).json({ message: 'Internal server error' });
+  }
+};
+
+export const addDocument = async (req, res) => {
+  try {
+    const companyId = req.user.companyId ?? null;
+    const scopeCustomerId = req.user?.customerId || null;
+    const { id } = req.params;
+
+    if (!req.file) return res.status(422).json({ message: 'Arquivo é obrigatório' });
+
+    const project = await projectRepository.findById(id, { companyId, customerId: scopeCustomerId });
+    if (!project) return res.status(404).json({ message: 'Projeto não encontrado' });
+
+    let document;
+    try {
+      document = await storeProjectDocument({
+        companyId, projectId: id, file: req.file, req, uploadedBy: req.user?.sub || null
+      });
+    } catch (uploadErr) {
+      logger.error('project addDocument upload error >>>', uploadErr);
+      return res.status(500).json({ message: uploadErr?.message || 'Falha ao enviar documento' });
+    }
+
+    const updated = await projectRepository.addDocument(companyId, id, document);
+    const enriched = await enrichDocuments(companyId, updated.documents || []);
+    return res.status(201).json(enriched);
+  } catch (err) {
+    logger.error('project addDocument error >>>', err);
+    return res.status(500).json({ message: 'Internal server error' });
+  }
+};
+
+export const deleteDocument = async (req, res) => {
+  try {
+    const companyId = req.user.companyId ?? null;
+    const scopeCustomerId = req.user?.customerId || null;
+    const { id, documentId } = req.params;
+
+    const project = await projectRepository.findById(id, { companyId, customerId: scopeCustomerId });
+    if (!project) return res.status(404).json({ message: 'Projeto não encontrado' });
+
+    const document = project.documents.id(documentId);
+    if (!document) return res.status(404).json({ message: 'Documento não encontrado' });
+
+    // Best-effort: remove do S3 quando aplicável (não bloqueia a remoção do registro).
+    if (document.storageKey && (document.storageSource === 'company' || document.storageSource === 'default')) {
+      try {
+        await s3Service.deleteObject({ companyId, key: document.storageKey });
+      } catch (s3Err) {
+        logger.warn('project deleteDocument S3 delete failed >>>', s3Err?.message);
+      }
+    }
+
+    const updated = await projectRepository.removeDocument(companyId, id, documentId);
+    if (!updated) return res.status(404).json({ message: 'Projeto não encontrado' });
+
+    const enriched = await enrichDocuments(companyId, updated.documents || []);
+    return res.status(200).json(enriched);
+  } catch (err) {
+    logger.error('project deleteDocument error >>>', err);
     return res.status(500).json({ message: 'Internal server error' });
   }
 };

@@ -43,6 +43,50 @@ export const uploadServiceOrderPhoto = (req, res, next) => {
   });
 };
 
+// ─── Documentos do Projeto ─────────────────────────────────────────────────────
+// Memória: o controller decide entre S3 e disco local. Aceita tipos de
+// documento comuns (não só imagens, como nas fotos de OS).
+const documentFileFilter = (req, file, cb) => {
+  const allowed = [
+    'application/pdf',
+    'application/msword',
+    'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+    'application/vnd.ms-excel',
+    'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+    'application/vnd.ms-powerpoint',
+    'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+    'text/plain',
+    'text/csv',
+    'image/jpeg', 'image/png', 'image/webp', 'image/gif',
+    'application/zip', 'application/x-zip-compressed'
+  ];
+  if (allowed.includes(file.mimetype)) {
+    cb(null, true);
+  } else {
+    cb(new Error('Tipo de arquivo não permitido para documentos.'), false);
+  }
+};
+
+const MAX_PROJECT_DOCUMENT_SIZE = 20 * 1024 * 1024; // 20MB
+
+const projectDocumentUpload = multer({
+  storage: multer.memoryStorage(),
+  fileFilter: documentFileFilter,
+  limits: { fileSize: MAX_PROJECT_DOCUMENT_SIZE }
+}).single('document');
+
+export const uploadProjectDocument = (req, res, next) => {
+  projectDocumentUpload(req, res, (err) => {
+    if (!err) return next();
+    if (err instanceof multer.MulterError && err.code === 'LIMIT_FILE_SIZE') {
+      return res.status(413).json({
+        message: 'O documento excede o tamanho máximo permitido de 20MB.'
+      });
+    }
+    return res.status(400).json({ message: err.message || 'Falha ao processar o upload do documento.' });
+  });
+};
+
 // ─── Logo da Empresa ──────────────────────────────────────────────────────────
 // Memória: o controller faz o upload ao S3 e persiste a URL/chave na empresa.
 export const uploadCompanyLogo = multer({

@@ -1,5 +1,19 @@
 import mongoose from 'mongoose';
 
+// Documento anexado ao projeto (contrato, planilha, foto etc). Armazenado no
+// S3 da empresa quando configurado, com fallback para disco local (/uploads) —
+// mesmo padrão já usado para fotos de Ordem de Serviço.
+const ProjectDocumentSchema = new mongoose.Schema({
+  url: { type: String, required: true, trim: true },
+  storageKey: { type: String, trim: true },
+  storageBucket: { type: String, trim: true },
+  storageSource: { type: String, enum: ['company', 'default', 'local'], default: 'local' },
+  filename: { type: String, trim: true },
+  mimetype: { type: String, trim: true },
+  size: { type: Number },
+  uploadedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User' }
+}, { timestamps: true });
+
 const ProjectSchema = new mongoose.Schema({
   companyId: {
     type: mongoose.Schema.Types.ObjectId,
@@ -59,7 +73,9 @@ const ProjectSchema = new mongoose.Schema({
     type: mongoose.Schema.Types.ObjectId,
     ref: 'User',
     default: null
-  }
+  },
+  // Documentos anexados ao projeto (contratos, planilhas, arquivos diversos)
+  documents: [ProjectDocumentSchema]
 }, {
   timestamps: true
 });
