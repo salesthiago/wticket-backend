@@ -1,6 +1,8 @@
 
 import express from 'express'
 import { authenticate, blockCustomerScope } from '../middleware/auth.middleware.js'
+import * as planController from '../controller/plan.controller.js'
+import * as moduleController from '../controller/module.controller.js'
 import usersRoutes from './users.routes.js'
 import authRoutes from './auth.routes.js';
 // import whatsappRoutes from './whatsapp.routes.js' // desabilitado: será serviço separado
@@ -36,6 +38,13 @@ import swaggerUi from 'swagger-ui-express'
 const router = express.Router();
 
 router.use('/auth', authRoutes);
+
+// Público: a tela de cadastro (/register, sem login) precisa listar planos e
+// módulos antes de qualquer autenticação. Ficam antes do gate global abaixo
+// para não exigir token — as demais rotas de /plans e /modules (POST/PUT/
+// DELETE/:id) continuam protegidas normalmente lá embaixo.
+router.get('/plans', planController.findAll);
+router.get('/modules', moduleController.findAll);
 
 // A partir daqui todo mundo passa por authenticate. Logins de cliente (com
 // customerId vinculado — ver models/user.model.js) só podem prosseguir além
