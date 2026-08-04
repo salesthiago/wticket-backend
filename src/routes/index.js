@@ -3,6 +3,8 @@ import express from 'express'
 import { authenticate, blockCustomerScope } from '../middleware/auth.middleware.js'
 import * as planController from '../controller/plan.controller.js'
 import * as moduleController from '../controller/module.controller.js'
+import * as companyController from '../controller/company.controller.js'
+import * as paymentController from '../controller/billing/payment.controller.js'
 import usersRoutes from './users.routes.js'
 import authRoutes from './auth.routes.js';
 // import whatsappRoutes from './whatsapp.routes.js' // desabilitado: será serviço separado
@@ -40,11 +42,15 @@ const router = express.Router();
 router.use('/auth', authRoutes);
 
 // Público: a tela de cadastro (/register, sem login) precisa listar planos e
-// módulos antes de qualquer autenticação. Ficam antes do gate global abaixo
-// para não exigir token — as demais rotas de /plans e /modules (POST/PUT/
-// DELETE/:id) continuam protegidas normalmente lá embaixo.
+// módulos, e submeter o cadastro em si, antes de qualquer autenticação. O
+// webhook de pagamento também precisa ficar aqui — ele se autentica sozinho
+// via ?webhookSecret=...+HMAC (a AbacatePay não envia JWT). Ficam antes do
+// gate global abaixo para não exigir token — as demais rotas de /plans,
+// /modules, /companies e /billing continuam protegidas normalmente lá embaixo.
 router.get('/plans', planController.findAll);
 router.get('/modules', moduleController.findAll);
+router.post('/companies/register', companyController.register);
+router.post('/billing/webhook', paymentController.webhook);
 
 // A partir daqui todo mundo passa por authenticate. Logins de cliente (com
 // customerId vinculado — ver models/user.model.js) só podem prosseguir além
