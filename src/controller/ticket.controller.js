@@ -3,6 +3,7 @@ import ticketRepository from "../repositories/ticket.repository.js";
 import ticketStatusRepository from "../repositories/ticket-status.repository.js";
 import customerRepository from "../repositories/customer.repository.js";
 import projectRepository from "../repositories/project.repository.js";
+import userRepository from "../repositories/user.repository.js";
 
 // Acesso de cliente ("portal"): quando o usuário logado tem customerId
 // vinculado, ele só pode ver/mexer em tickets ligados diretamente a esse
@@ -173,6 +174,51 @@ export const updateStatus = async (req, res) => {
     return res.status(200).json(updated);
   } catch (err) {
     logger.error("ticket updateStatus error", err);
+    return res.status(500).json({ message: "Internal server error" });
+  }
+};
+
+// Designar a tarefa para outro usuário: só administradores, e só para um
+// usuário interno (sem customerId), já que login de cliente não deve
+// aparecer como responsável por atendimento. Registra uma resposta
+// automática no histórico para manter rastreabilidade da troca.
+export const assignTicket = async (req, res) => {
+  try {
+    const companyId = req.user.companyId;
+    const scopeCustomerId = req.user?.customerId || null;
+    const { id } = req.params;
+    const { assignedTo } = req.body;
+    if (!id) return res.status(422).json({ message: "ID not found" });
+    if (!assignedTo) return res.status(422).json({ message: "assignedTo é obrigatório" });
+
+    if (!ADMIN_ROLES.includes(req.user?.role)) {
+      return res.status(403).json({ message: "Somente administradores podem designar a tarefa para outro usuário" });
+    }
+
+    const ticket = await ticketRepository.findById(id, { companyId });
+    if (!ticket || !ticketBelongsToScope(ticket, scopeCustomerId)) {
+      return res.status(404).json({ message: "Ticket not found" });
+    }
+
+    const targetUser = await userRepository.findById(assignedTo, { companyId });
+    if (!targetUser) {
+      return res.status(422).json({ message: "Usuário não encontrado" });
+    }
+    if (targetUser.customerId) {
+      return res.status(422).json({ message: "Não é possível designar a tarefa para um usuário vinculado a um cliente" });
+    }
+
+    await ticketRepository.assignTicket(id, assignedTo, { companyId });
+    await ticketRepository.addResponse(id, {
+      content: `Atribuído a ${targetUser.name}`,
+      respondedBy: req.user?.sub,
+      hoursSpent: 0
+    });
+
+    const updated = await ticketRepository.findById(id, { companyId });
+    return res.status(200).json(updated);
+  } catch (err) {
+    logger.error("ticket assignTicket error", err);
     return res.status(500).json({ message: "Internal server error" });
   }
 };
