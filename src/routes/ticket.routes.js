@@ -1,9 +1,12 @@
 import * as ticketController from '../controller/ticket.controller.js';
+import * as uploadController from '../controller/upload.controller.js';
 import { authenticate, requireTenant, requireModule } from '../middleware/auth.middleware.js';
+import { uploadEditorImage } from '../middleware/upload.middleware.js';
 import { Router } from 'express';
 
 const router = Router();
 
+router.post('/upload-image', authenticate, uploadEditorImage, uploadController.uploadEditorImage);
 router.get('/', authenticate, ticketController.findAll);
 router.post('/', authenticate, ticketController.create);
 router.get('/:id', authenticate, ticketController.findById);

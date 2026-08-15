@@ -1,12 +1,14 @@
 import { Router } from 'express';
 import { authenticate, requireTenant, requireModule } from '../middleware/auth.middleware.js';
-import { uploadProjectDocument } from '../middleware/upload.middleware.js';
+import { uploadProjectDocument, uploadEditorImage } from '../middleware/upload.middleware.js';
 import * as controller from '../controller/project.controller.js';
+import * as uploadController from '../controller/upload.controller.js';
 
 const router = Router();
 
 router.use(authenticate, requireTenant, requireModule('attendance'));
 
+router.post('/upload-image', uploadEditorImage, uploadController.uploadEditorImage);
 router.get('/', controller.findAll);
 router.post('/', controller.create);
 router.get('/:id', controller.findById);

@@ -87,6 +87,27 @@ export const uploadProjectDocument = (req, res, next) => {
   });
 };
 
+// ─── Imagens do Editor de Texto Rico ──────────────────────────────────────────
+// Imagens inseridas no corpo de descrições/respostas (editor rich text). Sempre
+// públicas (ver upload.controller.js), pois a URL fica salva dentro do HTML.
+const editorImageUpload = multer({
+  storage: multer.memoryStorage(),
+  fileFilter,
+  limits: { fileSize: 5 * 1024 * 1024 } // 5MB
+}).single('image');
+
+export const uploadEditorImage = (req, res, next) => {
+  editorImageUpload(req, res, (err) => {
+    if (!err) return next();
+    if (err instanceof multer.MulterError && err.code === 'LIMIT_FILE_SIZE') {
+      return res.status(413).json({
+        message: 'A imagem excede o tamanho máximo permitido de 5MB.'
+      });
+    }
+    return res.status(400).json({ message: err.message || 'Falha ao processar o upload da imagem.' });
+  });
+};
+
 // ─── Logo da Empresa ──────────────────────────────────────────────────────────
 // Memória: o controller faz o upload ao S3 e persiste a URL/chave na empresa.
 export const uploadCompanyLogo = multer({
