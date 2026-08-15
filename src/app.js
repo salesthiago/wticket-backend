@@ -43,8 +43,10 @@ app.use(cors({
 }));
 
 // Guarda o corpo raw (usado p/ validar a assinatura HMAC dos webhooks AbacatePay).
-app.use(express.json({ verify: (req, _res, buf) => { req.rawBody = buf; } }));
-app.use(express.urlencoded({ extended: true }));
+// Limite acima do padrão (100kb) porque descrições/respostas em HTML rico
+// (editor de texto) podem passar disso em textos longos com formatação.
+app.use(express.json({ limit: '10mb', verify: (req, _res, buf) => { req.rawBody = buf; } }));
+app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 app.use(cookieParser());
 
 // Health check
