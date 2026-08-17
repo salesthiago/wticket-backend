@@ -20,6 +20,7 @@ class ReceivableRepository {
     paymentMethod,
     customerId,
     serviceOrderId,
+    projectId,
     dueFrom,
     dueTo,
     page = 0,
@@ -32,6 +33,7 @@ class ReceivableRepository {
     if (paymentMethod) query.paymentMethod = paymentMethod;
     if (customerId) query.customerId = customerId;
     if (serviceOrderId) query.serviceOrderId = serviceOrderId;
+    if (projectId) query.projectId = projectId;
     if (dueFrom || dueTo) {
       query.dueDate = {};
       if (dueFrom) query.dueDate.$gte = new Date(dueFrom);
@@ -50,6 +52,7 @@ class ReceivableRepository {
       Receivable.find(query)
         .populate('customerId', 'name document phone email')
         .populate('serviceOrderId', 'orderNumber')
+        .populate('projectId', 'projectNumber title')
         .populate('createdBy', 'name')
         .populate('paidBy', 'name')
         .sort({ dueDate: 1, createdAt: -1 })
@@ -67,6 +70,7 @@ class ReceivableRepository {
     return await Receivable.findOne({ _id: id, companyId, isActive: true })
       .populate('customerId', 'name document phone email address')
       .populate('serviceOrderId', 'orderNumber status')
+      .populate('projectId', 'projectNumber title')
       .populate('createdBy', 'name email')
       .populate('paidBy', 'name email')
       .populate('cancelledBy', 'name email')
@@ -89,19 +93,37 @@ class ReceivableRepository {
       .sort({ createdAt: -1 });
   }
 
+  async findActiveByProject(companyId, projectId) {
+    if (!companyId) throw new Error('companyId is required');
+    return await Receivable.find({
+      companyId,
+      projectId,
+      isActive: true,
+      status: { $ne: 'cancelled' }
+    }).sort({ createdAt: -1 });
+  }
+
+  async listByProject(companyId, projectId) {
+    if (!companyId) throw new Error('companyId is required');
+    return await Receivable.find({ companyId, projectId, isActive: true })
+      .sort({ createdAt: -1 });
+  }
+
   async update(companyId, id, data) {
     if (!companyId) throw new Error('companyId is required');
     const patch = { ...data };
     delete patch.companyId;
     delete patch.number;       // imutável
     delete patch.serviceOrderId; // imutável (vínculo de origem)
+    delete patch.projectId;      // imutável (vínculo de origem)
     return await Receivable.findOneAndUpdate(
       { _id: id, companyId, isActive: true },
       { $set: patch },
       { new: true }
     )
       .populate('customerId', 'name document')
-      .populate('serviceOrderId', 'orderNumber');
+      .populate('serviceOrderId', 'orderNumber')
+      .populate('projectId', 'projectNumber title');
   }
 
   async pushStatus(companyId, id, statusEntry) {

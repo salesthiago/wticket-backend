@@ -1,6 +1,7 @@
 import logger from '../../utils/logger.js';
 import receivableRepository from '../../repositories/financial/receivable.repository.js';
 import serviceOrderRepository from '../../repositories/service-order.repository.js';
+import projectRepository from '../../repositories/project.repository.js';
 import { PAYMENT_METHODS } from '../../models/financial/receivable.model.js';
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -60,6 +61,7 @@ class ReceivableService {
       paymentMethod: data.paymentMethod,
       customerId: data.customerId || null,
       serviceOrderId: data.serviceOrderId || null,
+      projectId: data.projectId || null,
       notes: data.notes || null,
       createdBy: userId,
       status: 'pending',
@@ -258,6 +260,65 @@ class ReceivableService {
 
   async listByServiceOrder(companyId, serviceOrderId) {
     const list = await receivableRepository.listByServiceOrder(companyId, serviceOrderId);
+    await recomputeStatusBulk(list);
+    return list;
+  }
+
+  // ─── Faturamento de Projeto ──────────────────────────────────────────────
+
+  /**
+   * Cria um título a receber a partir de um Projeto.
+   * O título (descrição) é sempre o número do projeto.
+   * Regras:
+   *  - Projeto não pode ter outro título ativo (não cancelado)
+   */
+  async invoiceFromProject({ companyId, userId, projectId, data }) {
+    if (!companyId) throw Object.assign(new Error('companyId é obrigatório'), { status: 422 });
+
+    const project = await projectRepository.findById(projectId, { companyId });
+    if (!project) throw Object.assign(new Error('Projeto não encontrado'), { status: 404 });
+
+    // Anti-duplicidade
+    const existing = await receivableRepository.findActiveByProject(companyId, projectId);
+    if (existing && existing.length > 0) {
+      throw Object.assign(
+        new Error(`Projeto já possui título ativo (${existing[0].number}). Cancele-o antes de faturar novamente.`),
+        { status: 422 }
+      );
+    }
+
+    if (!data?.paymentMethod) {
+      throw Object.assign(new Error('Forma de pagamento é obrigatória'), { status: 422 });
+    }
+    if (!data?.dueDate) {
+      throw Object.assign(new Error('Data de vencimento é obrigatória'), { status: 422 });
+    }
+
+    let defaultAmount = 0;
+    if (data?.amount == null) {
+      const stats = await projectRepository.getStats(projectId, companyId);
+      defaultAmount = (stats.totalWorkedHours || 0) * (project.hourlyRate || 0);
+    }
+
+    const customerId = data?.customerId || (project.customerId?._id || project.customerId);
+
+    return await this.create({
+      companyId,
+      userId,
+      data: {
+        description: project.projectNumber,
+        amount: data?.amount != null ? Number(data.amount) : defaultAmount,
+        dueDate: data.dueDate,
+        paymentMethod: data.paymentMethod,
+        customerId,
+        projectId,
+        notes: data?.notes || `Faturamento do projeto ${project.projectNumber}`
+      }
+    });
+  }
+
+  async listByProject(companyId, projectId) {
+    const list = await receivableRepository.listByProject(companyId, projectId);
     await recomputeStatusBulk(list);
     return list;
   }

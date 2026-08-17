@@ -19,6 +19,8 @@ router.get('/:id/documents', controller.getDocuments);
 router.get('/:id/documents/:documentId/url', controller.getDocumentUrl);
 router.post('/:id/documents', uploadProjectDocument, controller.addDocument);
 router.delete('/:id/documents/:documentId', controller.deleteDocument);
+router.post('/:id/invoice', controller.invoice);
+router.get('/:id/receivables', controller.listReceivables);
 router.delete('/:id/destroy', controller.destroy);
 
 export default router;

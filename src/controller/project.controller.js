@@ -6,6 +6,7 @@ import projectStatusRepository from '../repositories/project-status.repository.j
 import ticketRepository from '../repositories/ticket.repository.js';
 import { buildProjectsWorkbook } from '../services/project-excel.service.js';
 import * as s3Service from '../services/storage/s3.service.js';
+import receivableService from '../services/financial/receivable.service.js';
 
 // Exclusão de projeto: liberada para quem criou o registro ou para
 // administradores (mesma regra usada para tickets/respostas).
@@ -355,6 +356,52 @@ export const deleteDocument = async (req, res) => {
     return res.status(200).json(enriched);
   } catch (err) {
     logger.error('project deleteDocument error >>>', err);
+    return res.status(500).json({ message: 'Internal server error' });
+  }
+};
+
+// ─── Faturamento ──────────────────────────────────────────────────────────────
+
+export const invoice = async (req, res) => {
+  try {
+    const companyId = req.user.companyId;
+    const userId = req.user.sub;
+    const { id } = req.params;
+
+    const role = req.user.role;
+    if (!['super_admin', 'administrator', 'finance'].includes(role)) {
+      return res.status(403).json({ message: 'Apenas usuários com role administrator ou finance podem faturar.' });
+    }
+
+    const modules = req.user.modules || [];
+    if (!modules.includes('financial')) {
+      return res.status(403).json({ message: 'Módulo financeiro não está ativo para esta empresa.' });
+    }
+
+    const doc = await receivableService.invoiceFromProject({
+      companyId,
+      userId,
+      projectId: id,
+      data: req.body || {}
+    });
+    return res.status(201).json(doc);
+  } catch (err) {
+    logger.error('ProjectController :: invoice >> ', err);
+    return res.status(err.status || 500).json({
+      message: err.message || 'Internal server error',
+      details: err.details
+    });
+  }
+};
+
+export const listReceivables = async (req, res) => {
+  try {
+    const companyId = req.user.companyId;
+    const { id } = req.params;
+    const list = await receivableService.listByProject(companyId, id);
+    return res.status(200).json(list);
+  } catch (err) {
+    logger.error('ProjectController :: listReceivables >> ', err);
     return res.status(500).json({ message: 'Internal server error' });
   }
 };
