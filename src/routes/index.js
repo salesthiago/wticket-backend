@@ -51,6 +51,7 @@ router.get('/plans', planController.findAll);
 router.get('/modules', moduleController.findAll);
 router.post('/companies/register', companyController.register);
 router.post('/billing/webhook', paymentController.webhook);
+router.post('/billing/webhook/itau', paymentController.itauWebhook);
 
 // A partir daqui todo mundo passa por authenticate. Logins de cliente (com
 // customerId vinculado — ver models/user.model.js) só podem prosseguir além

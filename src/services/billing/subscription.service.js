@@ -6,6 +6,8 @@ import paymentRepository from '../../repositories/billing/payment.repository.js'
 import { cycleToDays } from '../../models/plan.model.js';
 import { getConfig } from '../../config/abacatepay.js';
 import * as abacatepay from './abacatepay.service.js';
+import paymentSettingsService from './payment-settings.service.js';
+import registry from './providers/index.js';
 
 function httpError(message, status) {
   return Object.assign(new Error(message), { status });
@@ -87,7 +89,7 @@ class SubscriptionService {
    * @param {object} [p.payer] dados do pagador p/ o customer (name,email,phone,taxId)
    * @returns {Promise<{paymentId,url,amount,status,providerBillingId,moduleCodes,planId}>}
    */
-  async createCheckout({ companyId, planId, payer, completionUrl, returnUrl }) {
+  async createCheckout({ companyId, planId, payer, completionUrl, returnUrl, method }) {
     if (!companyId) throw httpError('companyId é obrigatório', 422);
 
     const company = await companyRepository.findById(companyId);
@@ -99,6 +101,19 @@ class SubscriptionService {
     let plan = await planRepository.findById(effectivePlanId);
     if (!plan) throw httpError('Plano não encontrado', 404);
     if (!plan.isActive) throw httpError('Plano inativo', 422);
+
+    // Roteamento método→provedor. Sem `method`, usa a rota padrão (cartão via
+    // AbacatePay — comportamento atual). PIX é roteado para o Itaú.
+    const route = method
+      ? await paymentSettingsService.resolveForMethod(method)
+      : await paymentSettingsService.defaultRoute();
+
+    if (route.providerKey === 'itau') {
+      return this._createItauCheckout({ company, plan, route });
+    }
+    if (route.providerKey !== 'abacatepay') {
+      throw httpError(`Provedor ${route.providerKey} ainda não implementado no billing`, 422);
+    }
 
     // Garante o produto recorrente no AbacatePay (cria sob demanda se faltar).
     plan = await this.ensurePlanProduct(plan);
@@ -153,6 +168,97 @@ class SubscriptionService {
       moduleCodes: codes,
       planId: plan._id
     };
+  }
+
+  // ─── Checkout via Itaú (Pix) ──────────────────────────────────────────────
+
+  /**
+   * Cria uma cobrança Pix no Itaú para a assinatura do plano e persiste o
+   * Payment local. Retorna { paymentId, pix, amount, status, ... }.
+   * Diferente do AbacatePay, não há página hospedada — o front exibe o QR.
+   */
+  async _createItauCheckout({ company, plan, route }) {
+    const codes = [...plan.moduleCodes];
+    const periodDays = cycleToDays(plan.cycle);
+    await this._ensureModulesAttached(company, codes);
+
+    const provider = registry.get('itau');
+    const charge = await provider.createCharge(
+      {
+        companyId: String(company._id),
+        planId: String(plan._id),
+        amount: Number(plan.price || 0),
+        method: 'pix',
+        periodDays,
+        moduleCodes: codes,
+        recurring: !!route.recurring,
+        payer: {
+          name: company.name,
+          email: company.email,
+          phone: company.phone,
+          taxId: company.document
+        }
+      },
+      route.config
+    );
+
+    const payment = await paymentRepository.create({
+      companyId: company._id,
+      planId: plan._id,
+      provider: 'itau',
+      providerBillingId: charge.providerBillingId,
+      kind: 'subscription',
+      amount: charge.amount,
+      moduleCodes: codes,
+      periodDays,
+      status: charge.status || 'pending',
+      pix: charge.pix,
+      metadata: { environment: route.config?.environment, recurring: !!route.recurring }
+    });
+
+    logger.info(`Billing :: cobrança Itaú ${charge.providerBillingId} criada p/ empresa ${company._id} (plano ${plan.name})`);
+
+    return {
+      paymentId: payment._id,
+      provider: 'itau',
+      pix: payment.pix,
+      amount: payment.amount,
+      status: payment.status,
+      providerBillingId: payment.providerBillingId,
+      moduleCodes: codes,
+      planId: plan._id
+    };
+  }
+
+  /** Webhook do Itaú (billing). Idempotente pelo providerBillingId. */
+  async handleItauWebhook(event) {
+    if (!event?.providerBillingId) {
+      logger.warn('Billing :: webhook Itaú sem providerBillingId');
+      return null;
+    }
+    const payment = await paymentRepository.findByProviderBillingId(event.providerBillingId);
+    if (!payment) {
+      logger.warn(`Billing :: webhook Itaú para cobrança desconhecida ${event.providerBillingId}`);
+      return null;
+    }
+    await paymentRepository.pushEvent(payment._id, { type: `itau.${event.status}`, raw: event.raw });
+
+    if (event.status !== 'paid') {
+      if (payment.status === 'pending') {
+        await paymentRepository.update(payment._id, {
+          status: event.status === 'expired' ? 'expired' : 'cancelled'
+        });
+      }
+      return payment;
+    }
+
+    if (payment.status === 'paid') return payment;
+
+    const paidAt = new Date();
+    await paymentRepository.markPaid(payment._id, { paidAt });
+    await this.activateSubscription(payment, paidAt);
+    logger.info(`Billing :: cobrança Itaú ${event.providerBillingId} paga → assinatura liberada (empresa ${payment.companyId})`);
+    return payment;
   }
 
   async _ensureModulesAttached(company, codes) {

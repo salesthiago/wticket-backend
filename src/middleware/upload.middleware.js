@@ -132,3 +132,33 @@ export const uploadNfseCertificate = multer({
   fileFilter: certFileFilter,
   limits: { fileSize: 2 * 1024 * 1024 } // 2MB é suficiente para PFX
 }).single('certificate');
+
+// ─── Certificado / chave mTLS do Itaú (billing) — PEM (.crt / .key) ───────────
+const pemFileFilter = (req, file, cb) => {
+  const okMime = ['application/x-pem-file', 'application/x-x509-ca-cert', 'text/plain', 'application/octet-stream'];
+  const okExt = /\.(crt|cer|pem|key)$/i.test(file.originalname);
+  if (okExt || okMime.includes(file.mimetype)) {
+    cb(null, true);
+  } else {
+    cb(new Error('Tipo de arquivo não permitido. Envie um arquivo PEM (.crt ou .key).'), false);
+  }
+};
+
+const itauPemUpload = multer({
+  storage: multer.memoryStorage(), // o conteúdo é cifrado pelo payment-settings.service
+  fileFilter: pemFileFilter,
+  limits: { fileSize: 64 * 1024 } // 64KB é folgado para um PEM
+}).single('file');
+
+const wrapPemUpload = (req, res, next) => {
+  itauPemUpload(req, res, (err) => {
+    if (!err) return next();
+    if (err instanceof multer.MulterError && err.code === 'LIMIT_FILE_SIZE') {
+      return res.status(413).json({ message: 'O arquivo excede 64KB. Envie apenas o PEM.' });
+    }
+    return res.status(400).json({ message: err.message || 'Falha ao processar o upload.' });
+  });
+};
+
+export const uploadItauCertPem = wrapPemUpload;
+export const uploadItauKeyPem = wrapPemUpload;
