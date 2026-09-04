@@ -26,6 +26,11 @@ router.post(
 );
 
 router.post('/checkout', authenticate, paymentController.checkout);
+
+// Mantidas ANTES do '/:id' para não colidir com a rota de status por id.
+router.get('/status', authenticate, paymentController.getMyStatus);
+router.get('/methods', authenticate, paymentController.getMethods);
+
 router.get('/:id', authenticate, paymentController.getStatus);
 
 export default router;

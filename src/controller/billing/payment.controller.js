@@ -25,11 +25,39 @@ export const checkout = async (req, res) => {
     if (!companyId) {
       return res.status(403).json({ message: 'Usuário não está vinculado a uma empresa' });
     }
-    const { planId, payer, completionUrl, returnUrl } = req.body || {};
+    const { planId, payer, completionUrl, returnUrl, method } = req.body || {};
     const result = await subscriptionService.createCheckout({
-      companyId, planId, payer, completionUrl, returnUrl
+      companyId, planId, payer, completionUrl, returnUrl, method
     });
     return res.status(201).json(result);
+  } catch (err) {
+    return sendError(res, err);
+  }
+};
+
+// GET /api/billing/status → status de cobrança da empresa do usuário logado.
+// Bloqueado = trial/assinatura vencidos sem módulo ativo; nesse caso já
+// garante (cria se preciso) a cobrança pendente atual. Consumido pela faixa
+// de "trial expirado" e pela tela de checkout.
+export const getMyStatus = async (req, res) => {
+  try {
+    const companyId = resolveCompanyId(req);
+    if (!companyId) {
+      return res.status(403).json({ message: 'Usuário não está vinculado a uma empresa' });
+    }
+    const status = await subscriptionService.getBillingStatus(companyId);
+    return res.json(status);
+  } catch (err) {
+    return sendError(res, err);
+  }
+};
+
+// GET /api/billing/methods → formas de pagamento habilitadas (sem segredos) —
+// usado pela tela de checkout para listar as opções disponíveis.
+export const getMethods = async (_req, res) => {
+  try {
+    const methods = await paymentSettingsService.getAvailableMethods();
+    return res.json({ methods });
   } catch (err) {
     return sendError(res, err);
   }

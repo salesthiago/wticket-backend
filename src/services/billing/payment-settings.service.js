@@ -284,6 +284,18 @@ class PaymentSettingsService {
   }
 
   /**
+   * Métodos habilitados para o checkout do cliente final (sem segredos) —
+   * usado pela tela de checkout (faixa de trial expirado / cobrança pendente)
+   * para listar as formas de pagamento disponíveis.
+   */
+  async getAvailableMethods() {
+    const doc = await paymentSettingsRepository.getOrCreate();
+    return doc.methods
+      .filter(m => m.enabled)
+      .map(m => ({ method: m.method, providerKey: m.providerKey }));
+  }
+
+  /**
    * Roteamento padrão quando nenhum método é informado no checkout.
    * Preferência: cartão via provedor mapeado. Fallback duro: AbacatePay
    * (preserva o comportamento atual mesmo se a config estiver incompleta).

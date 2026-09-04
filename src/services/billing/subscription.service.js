@@ -19,6 +19,21 @@ function addDays(base, days) {
   return d;
 }
 
+// Recorte público de um Payment (sem campos internos) — devolvido pela tela
+// de checkout e pelo gate de billing.
+function publicPayment(payment) {
+  if (!payment) return null;
+  return {
+    id: payment._id,
+    provider: payment.provider,
+    amount: payment.amount,
+    status: payment.status,
+    checkoutUrl: payment.checkoutUrl || null,
+    pix: payment.pix || null,
+    createdAt: payment.createdAt
+  };
+}
+
 class SubscriptionService {
   // ─── Sincronização com o AbacatePay ────────────────────────────────────────
 
@@ -389,6 +404,60 @@ class SubscriptionService {
 
   async getPayment(id) {
     return await paymentRepository.findById(id);
+  }
+
+  // ─── Gate de billing (trial/assinatura vencidos) ───────────────────────────
+
+  /**
+   * Status de cobrança da empresa: bloqueado quando não é isenta e não tem
+   * nenhum módulo ativo (trial expirado ou assinatura vencida sem renovação).
+   * Quando bloqueado, garante (cria se preciso) a cobrança pendente atual —
+   * usado tanto pela tela de checkout quanto pelo gate de escrita da API.
+   */
+  async getBillingStatus(companyId) {
+    const company = await companyRepository.findById(companyId);
+    if (!company) return { blocked: false };
+    if (company.subscriptionExempt) return { blocked: false, exempt: true };
+
+    if (company.activeModuleCodes().length > 0) {
+      return { blocked: false, trialEndsAt: company.trialEndsAt || null };
+    }
+
+    const payment = await this.ensureChargeForCompany(company);
+    const trialExpired = company.trialEndsAt && new Date(company.trialEndsAt) <= new Date();
+    return {
+      blocked: true,
+      reason: trialExpired ? 'trial_expired' : 'subscription_expired',
+      trialEndsAt: company.trialEndsAt || null,
+      payment: publicPayment(payment)
+    };
+  }
+
+  /**
+   * Garante uma cobrança em aberto para a empresa: reaproveita a pendente mais
+   * recente ou cria uma nova (Pix por padrão; cai na rota padrão de pagamento
+   * se o Pix não estiver configurado). Idempotente — não duplica cobrança
+   * enquanto a anterior seguir pendente. Usado pelo gate de billing e pelo
+   * job de expiração de trial.
+   */
+  async ensureChargeForCompany(company) {
+    const pending = await paymentRepository.findLatestPendingForCompany(company._id);
+    if (pending) return pending;
+
+    try {
+      const result = await this.createCheckout({ companyId: company._id, method: 'pix' });
+      return await paymentRepository.findById(result.paymentId);
+    } catch (err) {
+      logger.warn(`Billing :: Pix indisponível p/ empresa ${company._id} (${err.message}); tentando rota padrão`);
+    }
+
+    try {
+      const result = await this.createCheckout({ companyId: company._id });
+      return await paymentRepository.findById(result.paymentId);
+    } catch (err) {
+      logger.warn(`Billing :: falha ao gerar cobrança automática p/ empresa ${company._id}: ${err.message}`);
+      return null;
+    }
   }
 }
 

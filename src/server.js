@@ -4,6 +4,7 @@ import app from "./app.js";
 import { connectWithRetry } from "./config/database.js";
 import logger from "./utils/logger.js";
 import pendingDebtNotifierJob from "./jobs/pending-debt-notifier.job.js";
+import trialExpirationJob from "./jobs/trial-expiration.job.js";
 // import { Server } from "socket.io";
 // import { verifyToken } from "./middleware/auth.middleware.js";
 // import { initSocket } from "./services/socket.service.js";
@@ -72,6 +73,7 @@ logger.info("══════════════════════�
 // initSocket(io);
 
 pendingDebtNotifierJob.start();
+trialExpirationJob.start();
 
 server.listen(PORT, () => {
   logger.info("\n════════════════════════════════════════════════════════════");

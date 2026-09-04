@@ -1,6 +1,7 @@
 
 import express from 'express'
 import { authenticate, blockCustomerScope } from '../middleware/auth.middleware.js'
+import { requireBillingOk } from '../middleware/billing-guard.middleware.js'
 import * as planController from '../controller/plan.controller.js'
 import * as moduleController from '../controller/module.controller.js'
 import * as companyController from '../controller/company.controller.js'
@@ -58,6 +59,12 @@ router.post('/billing/webhook/itau', paymentController.itauWebhook);
 // de blockCustomerScope se a rota for uma das liberadas logo abaixo
 // (Projetos/Tickets + o próprio perfil).
 router.use(authenticate);
+
+// Bloqueia escrita (POST/PUT/PATCH/DELETE) quando a assinatura da empresa
+// está vencida (trial expirado sem renovação) — devolve 402 p/ o front
+// redirecionar ao checkout. Roda antes do blockCustomerScope pois já ignora
+// sozinho logins de portal de cliente (customerId).
+router.use(requireBillingOk);
 
 router.use('/tickets', ticketRoutes);
 router.use('/ticket-categories', ticketCategoryRoutes);
