@@ -117,6 +117,12 @@ class SubscriptionService {
     if (!plan) throw httpError('Plano não encontrado', 404);
     if (!plan.isActive) throw httpError('Plano inativo', 422);
 
+    // Empresa antiga (pré-planos) escolhendo o plano agora no checkout —
+    // fixa no cadastro para as próximas cobranças/renovações não pedirem de novo.
+    if (!company.planId) {
+      await companyRepository.update(company._id, { planId: plan._id });
+    }
+
     // Roteamento método→provedor. Sem `method`, usa a rota padrão (cartão via
     // AbacatePay — comportamento atual). PIX é roteado para o Itaú.
     const route = method
@@ -423,12 +429,25 @@ class SubscriptionService {
       return { blocked: false, trialEndsAt: company.trialEndsAt || null };
     }
 
+    // Trial/assinatura vencidos sem renovação: suspende a empresa automaticamente
+    // na primeira detecção (idempotente — só transiciona enquanto ainda está
+    // 'active'). Sem isso, o status ficava "active" para sempre e só mudava se
+    // um super_admin suspendesse manualmente.
+    if (company.status === 'active') {
+      await companyRepository.setStatus(company._id, 'suspended');
+      logger.info(`Billing :: empresa ${company._id} suspensa automaticamente (sem módulo ativo)`);
+    }
+
     const payment = await this.ensureChargeForCompany(company);
     const trialExpired = company.trialEndsAt && new Date(company.trialEndsAt) <= new Date();
     return {
       blocked: true,
       reason: trialExpired ? 'trial_expired' : 'subscription_expired',
       trialEndsAt: company.trialEndsAt || null,
+      // Empresas antigas (pré-planos) podem não ter planId — nesse caso o
+      // checkout precisa deixar o usuário escolher um plano antes de gerar a
+      // cobrança (ensureChargeForCompany já tentou e falhou silenciosamente).
+      planId: company.planId ? String(company.planId) : null,
       payment: publicPayment(payment)
     };
   }

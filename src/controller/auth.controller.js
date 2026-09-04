@@ -61,10 +61,15 @@ export const login = async (req, res) => {
       if (!company) {
         return res.status(403).json({ message: 'User has no company associated' });
       }
-      // Empresa isenta de assinatura: acesso livre independente do status de pagamento
-      if (!company.subscriptionExempt && company.status !== 'active') {
+      // Empresa isenta de assinatura: acesso livre independente do status de pagamento.
+      // 'suspended'/'pending_payment' (trial vencido ou 1ª cobrança pendente) NÃO
+      // bloqueiam mais o login — o usuário precisa conseguir entrar para ver a
+      // faixa de aviso e concluir o pagamento em /checkout (billing-guard.middleware
+      // bloqueia as gravações e a tela de checkout libera o pagamento). Só
+      // 'cancelled' (ação manual do super_admin) continua barrando o acesso.
+      if (!company.subscriptionExempt && company.status === 'cancelled') {
         return res.status(403).json({
-          message: `Company is not active (status: ${company.status})`,
+          message: 'Empresa cancelada. Entre em contato com o suporte.',
           companyStatus: company.status
         });
       }
