@@ -14,6 +14,16 @@ dotenv.config();
 
 const PORT = process.env.PORT || 3000;
 
+// Rede de seguranca: no Node >= 15 uma promessa rejeitada sem tratamento encerra o
+// processo (PM2 reinicia → nginx devolve 502 para TODAS as rotas durante o gap).
+// Aqui apenas registramos — um erro de provedor externo não pode derrubar o app.
+process.on('unhandledRejection', (reason) => {
+  logger.error('⚠️  unhandledRejection (ignorado):', reason);
+});
+process.on('uncaughtException', (err) => {
+  logger.error('⚠️  uncaughtException (ignorado):', err);
+});
+
 connectWithRetry();
 
 const server = http.createServer(app);

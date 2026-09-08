@@ -37,13 +37,23 @@ export const itauProvider = {
       `p/ empresa ${request.companyId} (R$ ${request.amount})`
     );
 
-    const cob = await criarCobranca(config, {
-      txid,
-      amount: request.amount,
-      payer: request.payer,
-      expiracaoSegundos: 3600,
-      solicitacao: 'Assinatura WTicket'
-    });
+    let cob;
+    try {
+      cob = await criarCobranca(config, {
+        txid,
+        amount: request.amount,
+        payer: request.payer,
+        expiracaoSegundos: 3600,
+        solicitacao: 'Assinatura WTicket'
+      });
+    } catch (err) {
+      // Garante um erro "de cliente" (4xx) com mensagem clara — nunca 5xx nem
+      // rejeição não tratada que possa derrubar o processo.
+      logger.error(`Billing :: Itaú PIX createCharge falhou :: ${err.message}`);
+      throw Object.assign(new Error(err.message || 'Falha ao gerar a cobrança PIX no Itaú'), {
+        status: err.status && err.status < 500 ? err.status : 422
+      });
+    }
 
     const emv = cob.pixCopiaECola;
     if (!emv) {

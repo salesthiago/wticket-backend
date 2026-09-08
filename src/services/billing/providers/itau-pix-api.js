@@ -51,6 +51,19 @@ function pickDiagHeaders(headers = {}) {
   return out;
 }
 
+async function safeAxios(opts) {
+  try {
+    return await axios({ timeout: 20000, maxRedirects: 0, validateStatus: () => true, ...opts });
+  } catch (err) {
+    // Erro de rede/DNS/TLS/timeout — nunca deixar virar 5xx nem rejeição não tratada.
+    logger.error(`Billing :: Itaú PIX falha de rede em ${opts.method} ${opts.url} :: ${err.code || ''} ${err.message}`);
+    throw httpError(
+      `Não foi possível conectar ao Itaú PIX (${err.code || err.message}). Verifique o host/ambiente configurado.`,
+      422
+    );
+  }
+}
+
 async function getToken(config, { force = false } = {}) {
   const key = cacheKey(config);
   const cached = tokenCache.get(key);
@@ -68,14 +81,12 @@ async function getToken(config, { force = false } = {}) {
   try {
     const url = `${ep.authUrl}${ep.tokenPath}`;
     logger.info(`Billing :: Itaú PIX OAuth POST ${url} (scope=${config.pixScope || '—'})`);
-    const res = await axios({
+    const res = await safeAxios({
       method: 'POST',
       url,
       headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
       data: new URLSearchParams(form).toString(),
-      httpsAgent: agent,
-      timeout: 30000,
-      validateStatus: () => true
+      httpsAgent: agent
     });
     if (res.status < 200 || res.status >= 300 || !res.data?.access_token) {
       logger.error(
@@ -84,7 +95,7 @@ async function getToken(config, { force = false } = {}) {
       );
       throw httpError(
         `Falha ao autenticar no Itaú PIX (HTTP ${res.status}): ${describeItauError(res.data)}`,
-        502
+        422
       );
     }
     const token = res.data.access_token;
@@ -136,14 +147,12 @@ async function request(config, { method, path, body, operation }) {
   const url = `${ep.apiUrl}${path}`;
   try {
     logger.info(`Billing :: Itaú PIX ${method} ${url}`);
-    const res = await axios({
+    const res = await safeAxios({
       method,
       url,
       headers: authHeaders(token, config),
       data: body,
-      httpsAgent: agent,
-      timeout: 30000,
-      validateStatus: () => true
+      httpsAgent: agent
     });
 
     if (res.status < 200 || res.status >= 300) {
@@ -154,9 +163,10 @@ async function request(config, { method, path, body, operation }) {
       const hint = res.status === 403
         ? ' (403 costuma ser apikey ausente/incorreta, host de produção errado, ou o app sem o produto "PIX Recebimentos"/escopo cob.write habilitado)'
         : '';
+      // Sempre 422: falha do provedor externo não é erro do nosso servidor.
       throw httpError(
         `Itaú recusou ${operation} (HTTP ${res.status}): ${describeItauError(res.data)}${hint}`,
-        res.status === 403 || res.status === 401 ? 422 : 502
+        422
       );
     }
     return res.data;
