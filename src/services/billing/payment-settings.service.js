@@ -249,6 +249,8 @@ class PaymentSettingsService {
       beneficiaryId: i.beneficiaryId || undefined,
       pixKey: i.pixKey || env.pixKey,
       pixKeyType: i.pixKeyType || env.pixKeyType,
+      apikey: env.apikey,          // só por .env (ITAU_PIX_APIKEY)
+      pixScope: env.pixScope,      // só por .env (ITAU_PIX_SCOPE)
       recurringEnabled: !!i.recurringEnabled
     };
   }

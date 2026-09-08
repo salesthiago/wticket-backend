@@ -40,7 +40,10 @@ export function getItauEnvConfig() {
     certificatePem: readFileMaybe(process.env.ITAU_CERTIFICATE_PATH?.trim()),
     privateKeyPem: readFileMaybe(process.env.ITAU_PRIVATE_KEY_PATH?.trim()),
     pixKey: process.env.ITAU_PIX_KEY?.trim() || undefined,
-    pixKeyType: process.env.ITAU_PIX_KEY_TYPE?.trim() || undefined
+    pixKeyType: process.env.ITAU_PIX_KEY_TYPE?.trim() || undefined,
+    // apikey ("User Key") do app no gateway do Itaú; escopo OAuth opcional.
+    apikey: process.env.ITAU_PIX_APIKEY?.trim() || undefined,
+    pixScope: process.env.ITAU_PIX_SCOPE?.trim() || undefined
   };
 }
 

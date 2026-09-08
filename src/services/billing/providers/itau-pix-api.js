@@ -8,7 +8,8 @@ import { getItauPixEndpoints } from '../../../config/payment.js';
 // pelo billing da PLATAFORMA (cobrança da assinatura das empresas).
 //
 // `config` é a config efetiva do Itaú já descriptografada (payment-settings):
-//   { environment, clientId, clientSecret, certificatePem, privateKeyPem, pixKey, pixKeyType }
+//   { environment, clientId, clientSecret, certificatePem, privateKeyPem,
+//     pixKey, pixKeyType, apikey?, pixScope? }
 
 const tokenCache = new Map();
 
@@ -27,6 +28,29 @@ function cacheKey(config) {
   return `${config.clientId}:${config.environment}`;
 }
 
+// Resumo legível do corpo de resposta do Itaú (para log e mensagem de erro).
+function describeItauError(data) {
+  if (data == null || data === '') return '(corpo vazio)';
+  if (typeof data === 'string') return data.slice(0, 500);
+  if (data.mensagem) return data.mensagem;
+  if (data.detail || data.title) return [data.title, data.detail].filter(Boolean).join(' — ');
+  if (data.error_description || data.error) return data.error_description || data.error;
+  if (Array.isArray(data.violacoes) && data.violacoes.length) {
+    return data.violacoes.map(v => v.razao || v.propriedade).filter(Boolean).join('; ');
+  }
+  try { return JSON.stringify(data).slice(0, 500); } catch { return String(data).slice(0, 500); }
+}
+
+// Headers de diagnóstico que o gateway do Itaú costuma devolver.
+function pickDiagHeaders(headers = {}) {
+  const keep = ['www-authenticate', 'x-itau-correlationid', 'x-itau-flowid', 'x-3scale-error', 'x-app-name'];
+  const out = {};
+  for (const k of Object.keys(headers)) {
+    if (keep.includes(k.toLowerCase())) out[k] = headers[k];
+  }
+  return out;
+}
+
 async function getToken(config, { force = false } = {}) {
   const key = cacheKey(config);
   const cached = tokenCache.get(key);
@@ -34,29 +58,39 @@ async function getToken(config, { force = false } = {}) {
 
   const ep = getItauPixEndpoints(config.environment);
   const agent = buildAgent(config);
+  const form = {
+    grant_type: 'client_credentials',
+    client_id: config.clientId,
+    client_secret: config.clientSecret
+  };
+  if (config.pixScope) form.scope = config.pixScope;
+
   try {
+    const url = `${ep.authUrl}${ep.tokenPath}`;
+    logger.info(`Billing :: Itaú PIX OAuth POST ${url} (scope=${config.pixScope || '—'})`);
     const res = await axios({
       method: 'POST',
-      url: `${ep.authUrl}${ep.tokenPath}`,
+      url,
       headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-      data: new URLSearchParams({
-        grant_type: 'client_credentials',
-        client_id: config.clientId,
-        client_secret: config.clientSecret
-      }).toString(),
+      data: new URLSearchParams(form).toString(),
       httpsAgent: agent,
       timeout: 30000,
       validateStatus: () => true
     });
     if (res.status < 200 || res.status >= 300 || !res.data?.access_token) {
+      logger.error(
+        `Billing :: Itaú PIX OAuth falhou HTTP ${res.status} :: ${describeItauError(res.data)} :: ` +
+        `headers=${JSON.stringify(pickDiagHeaders(res.headers))}`
+      );
       throw httpError(
-        `Falha ao autenticar no Itaú PIX (HTTP ${res.status}): ${res.data?.error_description || res.data?.mensagem || 'sem access_token'}`,
+        `Falha ao autenticar no Itaú PIX (HTTP ${res.status}): ${describeItauError(res.data)}`,
         502
       );
     }
     const token = res.data.access_token;
     const ttl = Number(res.data.expires_in || 300) * 1000;
     tokenCache.set(key, { token, expiresAt: Date.now() + ttl });
+    if (res.data.scope) logger.info(`Billing :: Itaú PIX token OK (scopes: ${res.data.scope})`);
     return token;
   } finally {
     agent.destroy();
@@ -68,13 +102,22 @@ export function clearTokenCache(config) {
   else tokenCache.clear();
 }
 
-function authHeaders(token) {
-  return {
+function authHeaders(token, config) {
+  const h = {
     Authorization: `Bearer ${token}`,
     'Content-Type': 'application/json',
     'x-itau-correlationID': crypto.randomUUID(),
     'x-itau-flowID': crypto.randomUUID()
   };
+  // O gateway 3scale do Itaú normalmente exige o apikey além do Bearer.
+  // Default: o próprio client_id (comportamento mais comum). Sobrescreva com
+  // ITAU_PIX_APIKEY se o app tiver um "User Key" distinto.
+  const apikey = config?.apikey || config?.clientId;
+  if (apikey) {
+    h['x-itau-apikey'] = apikey;
+    h.apikey = apikey;
+  }
+  return h;
 }
 
 function devedorFromPayer(payer) {
@@ -86,15 +129,47 @@ function devedorFromPayer(payer) {
     : { cnpj: doc, nome: payer.name };
 }
 
+async function request(config, { method, path, body, operation }) {
+  const token = await getToken(config);
+  const ep = getItauPixEndpoints(config.environment);
+  const agent = buildAgent(config);
+  const url = `${ep.apiUrl}${path}`;
+  try {
+    logger.info(`Billing :: Itaú PIX ${method} ${url}`);
+    const res = await axios({
+      method,
+      url,
+      headers: authHeaders(token, config),
+      data: body,
+      httpsAgent: agent,
+      timeout: 30000,
+      validateStatus: () => true
+    });
+
+    if (res.status < 200 || res.status >= 300) {
+      logger.error(
+        `Billing :: Itaú PIX ${operation} HTTP ${res.status} @ ${url} :: ${describeItauError(res.data)} :: ` +
+        `headers=${JSON.stringify(pickDiagHeaders(res.headers))}`
+      );
+      const hint = res.status === 403
+        ? ' (403 costuma ser apikey ausente/incorreta, host de produção errado, ou o app sem o produto "PIX Recebimentos"/escopo cob.write habilitado)'
+        : '';
+      throw httpError(
+        `Itaú recusou ${operation} (HTTP ${res.status}): ${describeItauError(res.data)}${hint}`,
+        res.status === 403 || res.status === 401 ? 422 : 502
+      );
+    }
+    return res.data;
+  } finally {
+    agent.destroy();
+  }
+}
+
 /**
  * Cria/atualiza uma cobrança PIX imediata (`PUT /cob/{txid}`).
  * @returns {Promise<{ txid, pixCopiaECola, location, status, raw }>}
  */
 export async function criarCobranca(config, { txid, amount, payer, expiracaoSegundos = 3600, solicitacao }) {
-  const token = await getToken(config);
-  const ep = getItauPixEndpoints(config.environment);
-  const agent = buildAgent(config);
-
   const body = {
     calendario: { expiracao: expiracaoSegundos },
     valor: { original: Number(amount).toFixed(2) },
@@ -104,63 +179,34 @@ export async function criarCobranca(config, { txid, amount, payer, expiracaoSegu
   if (devedor) body.devedor = devedor;
   if (solicitacao) body.solicitacaoPagador = String(solicitacao).slice(0, 140);
 
-  try {
-    const res = await axios({
-      method: 'PUT',
-      url: `${ep.apiUrl}/cob/${encodeURIComponent(txid)}`,
-      headers: authHeaders(token),
-      data: body,
-      httpsAgent: agent,
-      timeout: 30000,
-      validateStatus: () => true
-    });
+  const d = await request(config, {
+    method: 'PUT',
+    path: `/cob/${encodeURIComponent(txid)}`,
+    body,
+    operation: 'a criação da cobrança PIX'
+  }) || {};
 
-    if (res.status < 200 || res.status >= 300) {
-      const msg = res.data?.mensagem
-        || (Array.isArray(res.data?.violacoes) && res.data.violacoes.map(v => v.razao).join('; '))
-        || `HTTP ${res.status}`;
-      throw httpError(`Itaú recusou a criação da cobrança PIX (${res.status}): ${msg}`, 422);
-    }
-
-    const d = res.data || {};
-    const pixCopiaECola = d.pixCopiaECola || d.pix_copia_e_cola || d.emv;
-    const location = d.location || d.loc?.location;
-    if (!pixCopiaECola) {
-      logger.warn('Billing :: Itaú PIX criou a cob mas não retornou pixCopiaECola', d);
-    }
-    return {
-      txid: d.txid || txid,
-      pixCopiaECola,
-      location,
-      status: d.status || 'ATIVA',
-      raw: d
-    };
-  } finally {
-    agent.destroy();
+  const pixCopiaECola = d.pixCopiaECola || d.pix_copia_e_cola || d.emv;
+  const location = d.location || d.loc?.location;
+  if (!pixCopiaECola) {
+    logger.warn('Billing :: Itaú PIX criou a cob mas não retornou pixCopiaECola', d);
   }
+  return {
+    txid: d.txid || txid,
+    pixCopiaECola,
+    location,
+    status: d.status || 'ATIVA',
+    raw: d
+  };
 }
 
 /** Consulta a situação de uma cobrança (`GET /cob/{txid}`). */
 export async function consultarCobranca(config, txid) {
-  const token = await getToken(config);
-  const ep = getItauPixEndpoints(config.environment);
-  const agent = buildAgent(config);
-  try {
-    const res = await axios({
-      method: 'GET',
-      url: `${ep.apiUrl}/cob/${encodeURIComponent(txid)}`,
-      headers: authHeaders(token),
-      httpsAgent: agent,
-      timeout: 30000,
-      validateStatus: () => true
-    });
-    if (res.status < 200 || res.status >= 300) {
-      throw httpError(`Falha ao consultar a cobrança PIX no Itaú (HTTP ${res.status})`, 502);
-    }
-    return res.data;
-  } finally {
-    agent.destroy();
-  }
+  return request(config, {
+    method: 'GET',
+    path: `/cob/${encodeURIComponent(txid)}`,
+    operation: 'a consulta da cobrança PIX'
+  });
 }
 
 export default { getToken, clearTokenCache, criarCobranca, consultarCobranca };
