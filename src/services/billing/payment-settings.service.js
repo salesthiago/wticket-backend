@@ -6,6 +6,7 @@ import { encryptSecret, decryptSecret } from '../../utils/crypto.util.js';
 import paymentSettingsRepository from '../../repositories/billing/payment-settings.repository.js';
 import { getItauEnvConfig, getStripeEnvConfig } from '../../config/payment.js';
 import registry from './providers/index.js';
+import { clearTokenCache as clearItauPixTokenCache } from './providers/itau-pix-api.js';
 
 const CERTS_DIR = path.resolve(process.cwd(), 'uploads', 'itau-certs');
 if (!fs.existsSync(CERTS_DIR)) fs.mkdirSync(CERTS_DIR, { recursive: true });
@@ -75,6 +76,8 @@ class PaymentSettingsService {
         environment: doc.itau.environment,
         clientId: doc.itau.clientId || null,
         beneficiaryId: doc.itau.beneficiaryId || null,
+        pixKey: doc.itau.pixKey || null,
+        pixKeyType: doc.itau.pixKeyType || null,
         recurringEnabled: doc.itau.recurringEnabled,
         clientSecretConfigured: !!doc.itau.clientSecretEnc,
         webhookSecretConfigured: !!doc.itau.webhookSecretEnc,
@@ -137,6 +140,11 @@ class PaymentSettingsService {
       }
       if (itau.clientId !== undefined) patch.clientId = String(itau.clientId).trim() || undefined;
       if (itau.beneficiaryId !== undefined) patch.beneficiaryId = String(itau.beneficiaryId).trim() || undefined;
+      if (itau.pixKey !== undefined) patch.pixKey = String(itau.pixKey).trim() || undefined;
+      if (itau.pixKeyType !== undefined) {
+        const t = String(itau.pixKeyType).trim();
+        patch.pixKeyType = ['cnpj', 'cpf', 'email', 'telefone', 'aleatoria'].includes(t) ? t : undefined;
+      }
       if (itau.recurringEnabled !== undefined) patch.recurringEnabled = !!itau.recurringEnabled;
       if (itau.clientSecret && !isMasked(itau.clientSecret)) {
         patch.clientSecretEnc = encryptSecret(String(itau.clientSecret).trim());
@@ -145,6 +153,7 @@ class PaymentSettingsService {
         patch.webhookSecretEnc = encryptSecret(String(itau.webhookSecret).trim());
       }
       await paymentSettingsRepository.patchProvider('itau', patch, userId);
+      clearItauPixTokenCache(); // credenciais/ambiente podem ter mudado
     }
 
     if (stripe) {
@@ -238,6 +247,8 @@ class PaymentSettingsService {
       certificatePem: readEncryptedPem(i.certificate?.storagePath) || env.certificatePem,
       privateKeyPem: readEncryptedPem(i.privateKey?.storagePath) || env.privateKeyPem,
       beneficiaryId: i.beneficiaryId || undefined,
+      pixKey: i.pixKey || env.pixKey,
+      pixKeyType: i.pixKeyType || env.pixKeyType,
       recurringEnabled: !!i.recurringEnabled
     };
   }

@@ -41,6 +41,9 @@ const ItauConfigSchema = new mongoose.Schema({
   webhookSecretEnc: { type: String },
   // id_beneficiario (Agência+00+Conta+DAC) usado no cadastro do webhook.
   beneficiaryId: { type: String, trim: true },
+  // Chave DICT da conta Itaú da plataforma — usada na API PIX Recebimentos (cob).
+  pixKey: { type: String, trim: true },
+  pixKeyType: { type: String, enum: ['cnpj', 'cpf', 'email', 'telefone', 'aleatoria'] },
   recurringEnabled: { type: Boolean, default: false }, // Pix Automático (Fase 2)
   certificate: { type: ItauCertificateSchema, default: null },
   privateKey: { type: ItauPrivateKeySchema, default: null }

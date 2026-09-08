@@ -6,6 +6,7 @@ import * as planController from '../controller/plan.controller.js'
 import * as moduleController from '../controller/module.controller.js'
 import * as companyController from '../controller/company.controller.js'
 import * as paymentController from '../controller/billing/payment.controller.js'
+import * as itauFinancialWebhookController from '../controller/financial/itau/itau-webhook.controller.js'
 import usersRoutes from './users.routes.js'
 import authRoutes from './auth.routes.js';
 // import whatsappRoutes from './whatsapp.routes.js' // desabilitado: será serviço separado
@@ -53,6 +54,9 @@ router.get('/modules', moduleController.findAll);
 router.post('/companies/register', companyController.register);
 router.post('/billing/webhook', paymentController.webhook);
 router.post('/billing/webhook/itau', paymentController.itauWebhook);
+// Webhook da Integração Itaú por empresa (Contas a Receber) — autentica-se
+// sozinho via HMAC (header x-itau-signature) contra o webhookSecret da empresa.
+router.post('/financial/itau/webhook/:companyId', itauFinancialWebhookController.handle);
 
 // A partir daqui todo mundo passa por authenticate. Logins de cliente (com
 // customerId vinculado — ver models/user.model.js) só podem prosseguir além
