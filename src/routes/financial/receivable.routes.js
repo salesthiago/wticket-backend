@@ -24,9 +24,9 @@ router.patch('/:id/payment/reverse', receivableController.reversePayment);
 router.patch('/:id/cancel', receivableController.cancel);
 router.delete('/:id/destroy', receivableController.destroy);
 
-// ─── Boleto Itaú do título (requer também o módulo itau_integration) ──────────
-router.post('/:id/itau-boleto', requireModule('itau_integration'), itauBoletoController.generateForReceivable);
-router.get('/:id/itau-boleto', requireModule('itau_integration'), itauBoletoController.getForReceivable);
-router.get('/:id/itau-boleto/pdf', requireModule('itau_integration'), itauBoletoController.getPdfForReceivable);
+// ─── Boleto Itaú do título (parte do módulo financeiro) ──────────────────────
+router.post('/:id/itau-boleto', itauBoletoController.generateForReceivable);
+router.get('/:id/itau-boleto', itauBoletoController.getForReceivable);
+router.get('/:id/itau-boleto/pdf', itauBoletoController.getPdfForReceivable);
 
 export default router;

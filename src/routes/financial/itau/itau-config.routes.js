@@ -8,7 +8,7 @@ const router = Router();
 router.use(
   authenticate,
   requireTenant,
-  requireModule('itau_integration'),
+  requireModule('financial'),
   requireRole('administrator', 'company_admin', 'finance')
 );
 

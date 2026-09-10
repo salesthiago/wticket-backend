@@ -52,18 +52,14 @@ const MODULES = [
   {
     code: 'financial',
     name: 'Financeiro',
-    description: 'Contas a receber, faturamento de ordens de serviço e baixa de pagamentos.',
-    features: ['receivables', 'manual_entry', 'payment_registration', 'service_order_invoicing'],
+    description: 'Contas a receber, faturamento de projetos e ordens de serviço, baixa de pagamentos, fatura para impressão e emissão de boletos Itaú (QR Code PIX).',
+    features: [
+      'receivables', 'manual_entry', 'payment_registration', 'service_order_invoicing',
+      'project_invoicing', 'invoice_print',
+      'itau_config', 'itau_boleto', 'itau_history'
+    ],
     price: 0,
     requires: []
-  },
-  {
-    code: 'itau_integration',
-    name: 'Integração Itaú',
-    description: 'Emissão de boletos registrados com QR Code PIX pela API Cobrança do Itaú, por empresa, a partir das Contas a Receber.',
-    features: ['itau_config', 'itau_boleto', 'itau_history'],
-    price: 0,
-    requires: ['financial']
   }
 ];
 
