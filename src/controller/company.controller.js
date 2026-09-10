@@ -106,7 +106,7 @@ export const update = async (req, res) => {
     }
     const { id } = req.params;
 
-    const allowed = ['name', 'document', 'documentType', 'email', 'phone', 'address'];
+    const allowed = ['name', 'document', 'documentType', 'email', 'phone', 'address', 'receiving'];
     const data = {};
     for (const key of allowed) {
       if (req.body[key] !== undefined) data[key] = req.body[key];

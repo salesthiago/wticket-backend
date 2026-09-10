@@ -52,6 +52,21 @@ const LogoSchema = new mongoose.Schema({
   storageSource: { type: String, trim: true }
 }, { _id: false });
 
+// Dados de recebimento da empresa (conta bancária + chave PIX) exibidos na
+// fatura impressa e usados como referência de cobrança. A integração Itaú
+// (geração de boletos) é configurada à parte, no módulo financeiro.
+const ReceivingInfoSchema = new mongoose.Schema({
+  bankName: { type: String, trim: true },
+  bankBranch: { type: String, trim: true },     // agência
+  bankAccount: { type: String, trim: true },    // conta (com dígito)
+  accountType: { type: String, enum: ['corrente', 'poupanca', ''], default: '' },
+  holderName: { type: String, trim: true },     // titular
+  holderDocument: { type: String, trim: true }, // CPF/CNPJ do titular
+  pixKey: { type: String, trim: true },
+  pixKeyType: { type: String, enum: ['cnpj', 'cpf', 'email', 'telefone', 'aleatoria', ''], default: '' },
+  instructions: { type: String, trim: true }    // instruções de pagamento livres
+}, { _id: false });
+
 const CompanySchema = new mongoose.Schema({
   name: { type: String, required: true, trim: true, index: true },
   document: { type: String, trim: true, index: true, sparse: true },
@@ -80,6 +95,7 @@ const CompanySchema = new mongoose.Schema({
   modules: { type: [CompanyModuleSchema], default: [] },
   storageConfig: { type: StorageConfigSchema, default: null },
   logo: { type: LogoSchema, default: null },
+  receiving: { type: ReceivingInfoSchema, default: null },
   trialEndsAt: { type: Date },
   // Última vez que um e-mail de débito pendente foi enviado (evita reenvio diário).
   lastDebtNotificationAt: { type: Date, default: null },
