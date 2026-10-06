@@ -54,7 +54,7 @@ class IbgeService {
         const name = it.nome || '';
         // Estrutura aninhada: municipio.microrregiao.mesorregiao.UF.sigla
         const uf = it?.microrregiao?.mesorregiao?.UF?.sigla
-          || it?.regiao?.sigla
+          || it?.['regiao-imediata']?.['regiao-intermediaria']?.UF?.sigla
           || '';
         if (!cMun || !name) continue;
 
