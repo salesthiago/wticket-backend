@@ -3,8 +3,9 @@ import ticketSubjectRepository from '../repositories/ticket-subject.repository.j
 
 export const findAll = async (req, res) => {
   try {
+    const companyId = req.user.companyId ?? null;
     const { categoryId, active } = req.query;
-    const subjects = await ticketSubjectRepository.findAll(categoryId || null, active === 'true');
+    const subjects = await ticketSubjectRepository.findAll(categoryId || null, active === 'true', companyId);
     return res.status(200).json(subjects);
   } catch (err) {
     logger.error('ticketSubject findAll error >>>', err);
@@ -14,8 +15,9 @@ export const findAll = async (req, res) => {
 
 export const findById = async (req, res) => {
   try {
+    const companyId = req.user.companyId ?? null;
     const { id } = req.params;
-    const subject = await ticketSubjectRepository.findById(id);
+    const subject = await ticketSubjectRepository.findById(id, companyId);
     if (!subject) return res.status(404).json({ message: 'Assunto não encontrado' });
     return res.status(200).json(subject);
   } catch (err) {
@@ -26,9 +28,10 @@ export const findById = async (req, res) => {
 
 export const create = async (req, res) => {
   try {
+    const companyId = req.user.companyId ?? null;
     const { name, description, categoryId, isActive } = req.body;
     if (!name) return res.status(422).json({ message: 'Nome é obrigatório' });
-    const subject = await ticketSubjectRepository.create({ name, description, categoryId, isActive });
+    const subject = await ticketSubjectRepository.create({ name, description, categoryId, isActive, companyId });
     return res.status(201).json(subject);
   } catch (err) {
     logger.error('ticketSubject create error >>>', err);
@@ -38,8 +41,9 @@ export const create = async (req, res) => {
 
 export const update = async (req, res) => {
   try {
+    const companyId = req.user.companyId ?? null;
     const { id } = req.params;
-    const updated = await ticketSubjectRepository.update(id, req.body);
+    const updated = await ticketSubjectRepository.update(id, req.body, companyId);
     if (!updated) return res.status(404).json({ message: 'Assunto não encontrado' });
     return res.status(200).json(updated);
   } catch (err) {
@@ -50,8 +54,9 @@ export const update = async (req, res) => {
 
 export const destroy = async (req, res) => {
   try {
+    const companyId = req.user.companyId ?? null;
     const { id } = req.params;
-    const deleted = await ticketSubjectRepository.delete(id);
+    const deleted = await ticketSubjectRepository.delete(id, companyId);
     if (!deleted) return res.status(404).json({ message: 'Assunto não encontrado' });
     return res.status(200).json({ message: 'Assunto removido com sucesso' });
   } catch (err) {

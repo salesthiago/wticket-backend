@@ -2,6 +2,8 @@ import logger from '../../utils/logger.js';
 import subscriptionService from '../../services/billing/subscription.service.js';
 import { getConfig } from '../../config/abacatepay.js';
 import { verifyWebhookSignature } from '../../services/billing/abacatepay.service.js';
+import paymentSettingsService from '../../services/billing/payment-settings.service.js';
+import registry from '../../services/billing/providers/index.js';
 
 function sendError(res, err, fallback = 'Internal server error') {
   const status = err?.status || 500;
@@ -23,11 +25,39 @@ export const checkout = async (req, res) => {
     if (!companyId) {
       return res.status(403).json({ message: 'Usuário não está vinculado a uma empresa' });
     }
-    const { planId, payer, completionUrl, returnUrl } = req.body || {};
+    const { planId, payer, completionUrl, returnUrl, method } = req.body || {};
     const result = await subscriptionService.createCheckout({
-      companyId, planId, payer, completionUrl, returnUrl
+      companyId, planId, payer, completionUrl, returnUrl, method
     });
     return res.status(201).json(result);
+  } catch (err) {
+    return sendError(res, err);
+  }
+};
+
+// GET /api/billing/status → status de cobrança da empresa do usuário logado.
+// Bloqueado = trial/assinatura vencidos sem módulo ativo; nesse caso já
+// garante (cria se preciso) a cobrança pendente atual. Consumido pela faixa
+// de "trial expirado" e pela tela de checkout.
+export const getMyStatus = async (req, res) => {
+  try {
+    const companyId = resolveCompanyId(req);
+    if (!companyId) {
+      return res.status(403).json({ message: 'Usuário não está vinculado a uma empresa' });
+    }
+    const status = await subscriptionService.getBillingStatus(companyId);
+    return res.json(status);
+  } catch (err) {
+    return sendError(res, err);
+  }
+};
+
+// GET /api/billing/methods → formas de pagamento habilitadas (sem segredos) —
+// usado pela tela de checkout para listar as opções disponíveis.
+export const getMethods = async (_req, res) => {
+  try {
+    const methods = await paymentSettingsService.getAvailableMethods();
+    return res.json({ methods });
   } catch (err) {
     return sendError(res, err);
   }
@@ -83,6 +113,25 @@ export const webhook = async (req, res) => {
   } catch (err) {
     // 500 faz a AbacatePay reenviar — bom para falhas transitórias.
     logger.error('Billing :: erro ao processar webhook', err);
+    return res.status(500).json({ message: 'webhook processing failed' });
+  }
+};
+
+// POST /api/billing/webhook/itau  (público — chamado pelo Itaú)
+// Valida o HMAC no provider.parseWebhook e libera/renova a assinatura.
+export const itauWebhook = async (req, res) => {
+  try {
+    const config = await paymentSettingsService.getConfigFor('itau');
+    const event = registry.get('itau').parseWebhook(req.rawBody, req.headers, req.query, config);
+    await subscriptionService.handleItauWebhook(event);
+    return res.status(200).json({ received: true });
+  } catch (err) {
+    const status = err?.status || 500;
+    if (status === 401) {
+      logger.warn('Billing :: webhook Itaú rejeitado (assinatura inválida)');
+      return res.status(401).json({ message: 'invalid signature' });
+    }
+    logger.error('Billing :: erro ao processar webhook Itaú', err);
     return res.status(500).json({ message: 'webhook processing failed' });
   }
 };

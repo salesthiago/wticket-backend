@@ -7,6 +7,7 @@ import User from '../models/user.model.js';
 import { encryptSecret } from '../utils/crypto.util.js';
 import * as s3Service from '../services/storage/s3.service.js';
 import subscriptionService from '../services/billing/subscription.service.js';
+import emailService from '../services/email/email.service.js';
 
 const isSuperAdmin = (req) => req.user?.role === 'super_admin';
 const isOwnCompany = (req) => req.user?.companyId && req.params.id === String(req.user.companyId);
@@ -105,7 +106,7 @@ export const update = async (req, res) => {
     }
     const { id } = req.params;
 
-    const allowed = ['name', 'document', 'documentType', 'email', 'phone', 'address'];
+    const allowed = ['name', 'document', 'documentType', 'email', 'phone', 'address', 'receiving'];
     const data = {};
     for (const key of allowed) {
       if (req.body[key] !== undefined) data[key] = req.body[key];
@@ -264,14 +265,23 @@ export const register = async (req, res) => {
       }
     }
 
+    // Trial automático: se o plano tiver trialDays > 0, ativa a empresa imediatamente
+    // sem exigir pagamento. Os módulos ficam ativos até o final do período de trial.
+    const hasTrial = plan && (plan.trialDays > 0);
+    const trialEndsAt = hasTrial ? new Date(Date.now() + plan.trialDays * 24 * 60 * 60 * 1000) : null;
+    const now = new Date();
+
     const company = await companyRepository.create({
       ...companyData,
-      status: 'pending_payment',
+      status: hasTrial ? 'active' : 'pending_payment',
       planId: plan?._id,
+      trialEndsAt: trialEndsAt || undefined,
       modules: modules.map(m => ({
         moduleId: m._id,
         code: m.code,
-        subscriptionStatus: 'pending'
+        subscriptionStatus: hasTrial ? 'active' : 'pending',
+        activatedAt: hasTrial ? now : undefined,
+        expiresAt: hasTrial ? trialEndsAt : undefined
       }))
     });
 
@@ -286,12 +296,19 @@ export const register = async (req, res) => {
 
     await companyRepository.update(company._id, { ownerId: owner._id });
 
+    // E-mail de boas-vindas (best-effort): não bloqueia o cadastro se falhar.
+    try {
+      await emailService.sendTemplated('welcome', owner.email, { name: owner.name, companyName: company.name });
+    } catch (err) {
+      logger.warn(`Company register :: welcome email não enviado p/ empresa ${company._id}: ${err.message}`);
+    }
+
     // Gera a cobrança já no cadastro (best-effort): se a AbacatePay não estiver
     // configurada ou falhar, o cadastro NÃO é bloqueado — o checkout vem null e o
-    // cliente pode tentar pagar depois.
+    // cliente pode tentar pagar depois. Planos com trial pulam o checkout imediato.
     let checkout = null;
     let checkoutError = null;
-    if (plan) {
+    if (plan && !hasTrial) {
       try {
         checkout = await subscriptionService.createCheckout({
           companyId: company._id,
@@ -313,12 +330,35 @@ export const register = async (req, res) => {
       company: { id: company._id, name: company.name, status: company.status },
       owner: { id: owner._id, name: owner.name, email: owner.email },
       modules: modules.map(m => m.code),
-      plan: plan ? { id: plan._id, name: plan.name, price: plan.price } : null,
+      plan: plan ? { id: plan._id, name: plan.name, price: plan.price, trialDays: plan.trialDays } : null,
+      trial: hasTrial ? { active: true, endsAt: trialEndsAt, days: plan.trialDays } : null,
       checkout,
       checkoutError
     });
   } catch (err) {
     logger.error('Company register error', err);
+    return res.status(500).json({ message: 'Internal server error' });
+  }
+};
+
+export const setExempt = async (req, res) => {
+  try {
+    if (!isSuperAdmin(req)) {
+      return res.status(403).json({ message: 'Only super_admin can change subscription exemption' });
+    }
+    const { id } = req.params;
+    const { exempt } = req.body;
+    if (typeof exempt !== 'boolean') {
+      return res.status(422).json({ message: 'Campo "exempt" deve ser boolean' });
+    }
+    const patch = { subscriptionExempt: exempt };
+    // Ao isentar, garante que a empresa fica ativa para conseguir logar
+    if (exempt) patch.status = 'active';
+    const updated = await companyRepository.update(id, patch);
+    if (!updated) return res.status(404).json({ message: 'Company not found' });
+    return res.json(updated);
+  } catch (err) {
+    logger.error('Company setExempt error', err);
     return res.status(500).json({ message: 'Internal server error' });
   }
 };

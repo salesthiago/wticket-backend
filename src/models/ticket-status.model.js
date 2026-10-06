@@ -1,6 +1,12 @@
 import mongoose from 'mongoose';
 
 const TicketStatusSchema = new mongoose.Schema({
+  companyId: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'Company',
+    default: null,
+    index: true
+  },
   name: {
     type: String,
     required: true,
@@ -19,6 +25,16 @@ const TicketStatusSchema = new mongoose.Schema({
     type: Boolean,
     default: false
   },
+  // Classificação usada para calcular o % de conclusão do projeto: tarefas
+  // com isDone contam 100%, com isInProgress contam 50%, as demais 0%.
+  isDone: {
+    type: Boolean,
+    default: false
+  },
+  isInProgress: {
+    type: Boolean,
+    default: false
+  },
   order: {
     type: Number,
     default: 0
@@ -31,11 +47,11 @@ const TicketStatusSchema = new mongoose.Schema({
   timestamps: true
 });
 
-// Garante que só um status seja o padrão por vez
+// Garante que só um status seja o padrão por vez dentro da mesma empresa
 TicketStatusSchema.pre('save', async function (next) {
   if (this.isDefault && this.isModified('isDefault')) {
     await this.constructor.updateMany(
-      { _id: { $ne: this._id } },
+      { _id: { $ne: this._id }, companyId: this.companyId ?? null },
       { $set: { isDefault: false } }
     );
   }

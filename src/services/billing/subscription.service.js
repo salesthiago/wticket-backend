@@ -6,6 +6,8 @@ import paymentRepository from '../../repositories/billing/payment.repository.js'
 import { cycleToDays } from '../../models/plan.model.js';
 import { getConfig } from '../../config/abacatepay.js';
 import * as abacatepay from './abacatepay.service.js';
+import paymentSettingsService from './payment-settings.service.js';
+import registry from './providers/index.js';
 
 function httpError(message, status) {
   return Object.assign(new Error(message), { status });
@@ -15,6 +17,21 @@ function addDays(base, days) {
   const d = new Date(base);
   d.setDate(d.getDate() + days);
   return d;
+}
+
+// Recorte público de um Payment (sem campos internos) — devolvido pela tela
+// de checkout e pelo gate de billing.
+function publicPayment(payment) {
+  if (!payment) return null;
+  return {
+    id: payment._id,
+    provider: payment.provider,
+    amount: payment.amount,
+    status: payment.status,
+    checkoutUrl: payment.checkoutUrl || null,
+    pix: payment.pix || null,
+    createdAt: payment.createdAt
+  };
 }
 
 class SubscriptionService {
@@ -87,7 +104,7 @@ class SubscriptionService {
    * @param {object} [p.payer] dados do pagador p/ o customer (name,email,phone,taxId)
    * @returns {Promise<{paymentId,url,amount,status,providerBillingId,moduleCodes,planId}>}
    */
-  async createCheckout({ companyId, planId, payer, completionUrl, returnUrl }) {
+  async createCheckout({ companyId, planId, payer, completionUrl, returnUrl, method }) {
     if (!companyId) throw httpError('companyId é obrigatório', 422);
 
     const company = await companyRepository.findById(companyId);
@@ -99,6 +116,25 @@ class SubscriptionService {
     let plan = await planRepository.findById(effectivePlanId);
     if (!plan) throw httpError('Plano não encontrado', 404);
     if (!plan.isActive) throw httpError('Plano inativo', 422);
+
+    // Empresa antiga (pré-planos) escolhendo o plano agora no checkout —
+    // fixa no cadastro para as próximas cobranças/renovações não pedirem de novo.
+    if (!company.planId) {
+      await companyRepository.update(company._id, { planId: plan._id });
+    }
+
+    // Roteamento método→provedor. Sem `method`, usa a rota padrão (cartão via
+    // AbacatePay — comportamento atual). PIX é roteado para o Itaú.
+    const route = method
+      ? await paymentSettingsService.resolveForMethod(method)
+      : await paymentSettingsService.defaultRoute();
+
+    if (route.providerKey === 'itau') {
+      return this._createItauCheckout({ company, plan, route });
+    }
+    if (route.providerKey !== 'abacatepay') {
+      throw httpError(`Provedor ${route.providerKey} ainda não implementado no billing`, 422);
+    }
 
     // Garante o produto recorrente no AbacatePay (cria sob demanda se faltar).
     plan = await this.ensurePlanProduct(plan);
@@ -153,6 +189,97 @@ class SubscriptionService {
       moduleCodes: codes,
       planId: plan._id
     };
+  }
+
+  // ─── Checkout via Itaú (Pix) ──────────────────────────────────────────────
+
+  /**
+   * Cria uma cobrança Pix no Itaú para a assinatura do plano e persiste o
+   * Payment local. Retorna { paymentId, pix, amount, status, ... }.
+   * Diferente do AbacatePay, não há página hospedada — o front exibe o QR.
+   */
+  async _createItauCheckout({ company, plan, route }) {
+    const codes = [...plan.moduleCodes];
+    const periodDays = cycleToDays(plan.cycle);
+    await this._ensureModulesAttached(company, codes);
+
+    const provider = registry.get('itau');
+    const charge = await provider.createCharge(
+      {
+        companyId: String(company._id),
+        planId: String(plan._id),
+        amount: Number(plan.price || 0),
+        method: 'pix',
+        periodDays,
+        moduleCodes: codes,
+        recurring: !!route.recurring,
+        payer: {
+          name: company.name,
+          email: company.email,
+          phone: company.phone,
+          taxId: company.document
+        }
+      },
+      route.config
+    );
+
+    const payment = await paymentRepository.create({
+      companyId: company._id,
+      planId: plan._id,
+      provider: 'itau',
+      providerBillingId: charge.providerBillingId,
+      kind: 'subscription',
+      amount: charge.amount,
+      moduleCodes: codes,
+      periodDays,
+      status: charge.status || 'pending',
+      pix: charge.pix,
+      metadata: { environment: route.config?.environment, recurring: !!route.recurring }
+    });
+
+    logger.info(`Billing :: cobrança Itaú ${charge.providerBillingId} criada p/ empresa ${company._id} (plano ${plan.name})`);
+
+    return {
+      paymentId: payment._id,
+      provider: 'itau',
+      pix: payment.pix,
+      amount: payment.amount,
+      status: payment.status,
+      providerBillingId: payment.providerBillingId,
+      moduleCodes: codes,
+      planId: plan._id
+    };
+  }
+
+  /** Webhook do Itaú (billing). Idempotente pelo providerBillingId. */
+  async handleItauWebhook(event) {
+    if (!event?.providerBillingId) {
+      logger.warn('Billing :: webhook Itaú sem providerBillingId');
+      return null;
+    }
+    const payment = await paymentRepository.findByProviderBillingId(event.providerBillingId);
+    if (!payment) {
+      logger.warn(`Billing :: webhook Itaú para cobrança desconhecida ${event.providerBillingId}`);
+      return null;
+    }
+    await paymentRepository.pushEvent(payment._id, { type: `itau.${event.status}`, raw: event.raw });
+
+    if (event.status !== 'paid') {
+      if (payment.status === 'pending') {
+        await paymentRepository.update(payment._id, {
+          status: event.status === 'expired' ? 'expired' : 'cancelled'
+        });
+      }
+      return payment;
+    }
+
+    if (payment.status === 'paid') return payment;
+
+    const paidAt = new Date();
+    await paymentRepository.markPaid(payment._id, { paidAt });
+    await this.activateSubscription(payment, paidAt);
+    logger.info(`Billing :: cobrança Itaú ${event.providerBillingId} paga → assinatura liberada (empresa ${payment.companyId})`);
+    return payment;
   }
 
   async _ensureModulesAttached(company, codes) {
@@ -283,6 +410,73 @@ class SubscriptionService {
 
   async getPayment(id) {
     return await paymentRepository.findById(id);
+  }
+
+  // ─── Gate de billing (trial/assinatura vencidos) ───────────────────────────
+
+  /**
+   * Status de cobrança da empresa: bloqueado quando não é isenta e não tem
+   * nenhum módulo ativo (trial expirado ou assinatura vencida sem renovação).
+   * Quando bloqueado, garante (cria se preciso) a cobrança pendente atual —
+   * usado tanto pela tela de checkout quanto pelo gate de escrita da API.
+   */
+  async getBillingStatus(companyId) {
+    const company = await companyRepository.findById(companyId);
+    if (!company) return { blocked: false };
+    if (company.subscriptionExempt) return { blocked: false, exempt: true };
+
+    if (company.activeModuleCodes().length > 0) {
+      return { blocked: false, trialEndsAt: company.trialEndsAt || null };
+    }
+
+    // Trial/assinatura vencidos sem renovação: suspende a empresa automaticamente
+    // na primeira detecção (idempotente — só transiciona enquanto ainda está
+    // 'active'). Sem isso, o status ficava "active" para sempre e só mudava se
+    // um super_admin suspendesse manualmente.
+    if (company.status === 'active') {
+      await companyRepository.setStatus(company._id, 'suspended');
+      logger.info(`Billing :: empresa ${company._id} suspensa automaticamente (sem módulo ativo)`);
+    }
+
+    const payment = await this.ensureChargeForCompany(company);
+    const trialExpired = company.trialEndsAt && new Date(company.trialEndsAt) <= new Date();
+    return {
+      blocked: true,
+      reason: trialExpired ? 'trial_expired' : 'subscription_expired',
+      trialEndsAt: company.trialEndsAt || null,
+      // Empresas antigas (pré-planos) podem não ter planId — nesse caso o
+      // checkout precisa deixar o usuário escolher um plano antes de gerar a
+      // cobrança (ensureChargeForCompany já tentou e falhou silenciosamente).
+      planId: company.planId ? String(company.planId) : null,
+      payment: publicPayment(payment)
+    };
+  }
+
+  /**
+   * Garante uma cobrança em aberto para a empresa: reaproveita a pendente mais
+   * recente ou cria uma nova (Pix por padrão; cai na rota padrão de pagamento
+   * se o Pix não estiver configurado). Idempotente — não duplica cobrança
+   * enquanto a anterior seguir pendente. Usado pelo gate de billing e pelo
+   * job de expiração de trial.
+   */
+  async ensureChargeForCompany(company) {
+    const pending = await paymentRepository.findLatestPendingForCompany(company._id);
+    if (pending) return pending;
+
+    try {
+      const result = await this.createCheckout({ companyId: company._id, method: 'pix' });
+      return await paymentRepository.findById(result.paymentId);
+    } catch (err) {
+      logger.warn(`Billing :: Pix indisponível p/ empresa ${company._id} (${err.message}); tentando rota padrão`);
+    }
+
+    try {
+      const result = await this.createCheckout({ companyId: company._id });
+      return await paymentRepository.findById(result.paymentId);
+    } catch (err) {
+      logger.warn(`Billing :: falha ao gerar cobrança automática p/ empresa ${company._id}: ${err.message}`);
+      return null;
+    }
   }
 }
 

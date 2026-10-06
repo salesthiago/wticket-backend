@@ -192,6 +192,44 @@ export const findLogs = async (req, res) => {
   }
 };
 
+export const editIssuance = async (req, res) => {
+  try {
+    const companyId = req.user.companyId;
+    const { id } = req.params;
+    const patch = req.body || {};
+    const issuance = await nfseIssuerService.editAndRegenerateXml({ companyId, issuanceId: id, patch });
+    return res.status(200).json(stripHeavy(issuance));
+  } catch (err) {
+    logger.error('NfseController :: editIssuance >> ', err);
+    return res.status(err.status || 500).json({
+      message: err.message || 'Falha ao editar emissão',
+      details: err.details
+    });
+  }
+};
+
+export const retransmit = async (req, res) => {
+  try {
+    const companyId = req.user.companyId;
+    const { id } = req.params;
+    const { issuance, ws } = await nfseIssuerService.retransmit({ companyId, issuanceId: id });
+    const result = stripHeavy(issuance);
+    result._ws = {
+      httpStatus: ws.httpStatus,
+      durationMs: ws.durationMs,
+      success: ws.httpStatus >= 200 && ws.httpStatus < 300,
+      errorMessage: ws.error || null
+    };
+    return res.status(200).json(result);
+  } catch (err) {
+    logger.error('NfseController :: retransmit >> ', err);
+    return res.status(err.status || 500).json({
+      message: err.message || 'Falha na retransmissão',
+      details: err.details
+    });
+  }
+};
+
 export const destroy = async (req, res) => {
   try {
     const companyId = req.user.companyId;

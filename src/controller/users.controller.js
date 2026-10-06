@@ -8,9 +8,8 @@ const isSuperAdmin = (req) => req.user?.role === 'super_admin';
 
 export const findAll = async (req, res) => {
   try {
-    const { search } = req.query;
-    const page = (req?.page - 1) || 0;
-    const rowsPerPage = req?.perPage || 10;
+    const { search, page, limit, internalOnly } = req.query;
+    const rowsPerPage = limit ? parseInt(limit) : 10;
 
     const query = {};
     if (search) {
@@ -19,6 +18,11 @@ export const findAll = async (req, res) => {
         $options: "i",
       };
     }
+    // Usuários "internos" (sem customerId): equipe da empresa, elegível para
+    // ser designada como responsável por uma tarefa/ticket.
+    if (internalOnly === 'true') {
+      query.customerId = null;
+    }
 
     // super_admin sees all users; everyone else only their company
     const companyId = isSuperAdmin(req) ? undefined : req.user.companyId;
@@ -26,7 +30,12 @@ export const findAll = async (req, res) => {
       return res.status(403).json({ message: 'Tenant access required' });
     }
 
-    const users = await userRepository.findAll({ query, page, rowsPerPage, companyId });
+    const users = await userRepository.findAll({
+      query,
+      page: page ? parseInt(page) - 1 : 0,
+      rowsPerPage,
+      companyId
+    });
 
     return res.status(200).json(users);
   } catch (err) {
@@ -37,7 +46,7 @@ export const findAll = async (req, res) => {
 
 export const create = async (req, res) => {
   try {
-    const { name, email, password, status, role } = req.body;
+    const { name, email, password, status, role, customerId } = req.body;
     if (!email || !password) return res.status(400).json({ message: 'email and password required' });
 
     const existing = await User.findOne({ email });
@@ -69,7 +78,8 @@ export const create = async (req, res) => {
       password,
       status,
       role: safeRole,
-      companyId
+      companyId,
+      customerId: customerId || null
     });
     return res.status(200).json(userCreated);
   } catch (err) {

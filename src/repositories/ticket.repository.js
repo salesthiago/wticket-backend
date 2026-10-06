@@ -20,11 +20,14 @@ class TicketRepository {
       if (companyId) query.companyId = companyId;
       return await Ticket.findOne(query)
         .populate('assignedTo', 'name email')
+        .populate('createdBy', 'name email')
         .populate('categoryId', 'name color')
         .populate('subjectId', 'name')
-        .populate('statusId', 'name label color')
+        .populate('statusId', 'name label color isDone isInProgress')
         .populate('appointmentId')
         .populate('serviceOrderId', 'orderNumber status')
+        .populate('projectId', 'title projectNumber customerId')
+        .populate('customerId', 'name phone email')
         .populate('responses.respondedBy', 'name email');
     } catch (error) {
       throw new Error(error.message);
@@ -42,18 +45,28 @@ class TicketRepository {
     }
   }
 
-  async findAll({ categoryId = null, statusId = null, assignedTo = null } = {}) {
+  async findAll({ categoryId = null, statusId = null, assignedTo = null, companyId = null, projectId = null, scopeCustomerId = null, scopeProjectIds = null } = {}) {
     try {
-      const query = {};
+      const query = { companyId: companyId ?? null };
       if (categoryId) query.categoryId = categoryId;
       if (statusId) query.statusId = statusId;
       if (assignedTo) query.assignedTo = assignedTo;
+      if (projectId) query.projectId = projectId;
+      // Escopo de acesso de cliente: só tickets ligados diretamente a ele ou
+      // aos projetos dele (ver ticket.controller.js).
+      if (scopeCustomerId) {
+        query.$or = [
+          { customerId: scopeCustomerId },
+          { projectId: { $in: scopeProjectIds || [] } }
+        ];
+      }
 
       return await Ticket.find(query)
         .populate('categoryId', 'name color')
         .populate('subjectId', 'name')
-        .populate('statusId', 'name label color')
+        .populate('statusId', 'name label color isDone isInProgress')
         .populate('assignedTo', 'name email')
+        .populate('customerId', 'name phone email')
         .populate('saleItems.product', 'name price sku')
         .sort({ createdAt: -1 })
         .exec();
@@ -76,14 +89,17 @@ class TicketRepository {
     }
   }
 
-  async addResponse(ticketId, { content, respondedBy }) {
+  async addResponse(ticketId, { content, respondedBy, hoursSpent }) {
     try {
+      const hours = Number(hoursSpent) > 0 ? Number(hoursSpent) : 0;
       return await Ticket.findByIdAndUpdate(
         ticketId,
         {
           $push: {
-            responses: { content, respondedBy, respondedAt: new Date() }
-          }
+            responses: { content, respondedBy, respondedAt: new Date(), hoursSpent: hours }
+          },
+          // Mantém workedHours como a soma acumulada das horas lançadas por resposta.
+          $inc: { workedHours: hours }
         },
         { new: true }
       )
@@ -91,6 +107,31 @@ class TicketRepository {
         .populate('statusId', 'name label color');
     } catch (error) {
       throw new Error('Erro ao adicionar resposta: ' + error.message);
+    }
+  }
+
+  async deleteResponse(ticketId, responseId) {
+    try {
+      const ticket = await Ticket.findById(ticketId);
+      if (!ticket) return null;
+      const response = ticket.responses.id(responseId);
+      if (!response) return null;
+      const hours = response.hoursSpent || 0;
+
+      return await Ticket.findByIdAndUpdate(
+        ticketId,
+        {
+          $pull: { responses: { _id: responseId } },
+          // Desfaz o incremento aplicado quando a resposta foi criada, para
+          // que as horas do projeto sejam recontabilizadas corretamente.
+          $inc: { workedHours: -hours }
+        },
+        { new: true }
+      )
+        .populate('responses.respondedBy', 'name email')
+        .populate('statusId', 'name label color');
+    } catch (error) {
+      throw new Error('Erro ao excluir resposta: ' + error.message);
     }
   }
 
@@ -163,6 +204,75 @@ class TicketRepository {
       logger.error('Erro ao deletar: ', error);
       throw new Error('Erro ao deletar ticket: ' + error.message);
     }
+  }
+
+  async attendanceDashboard(companyId = null) {
+    const match = { companyId: companyId ?? null };
+    const now = new Date();
+    const eighteenMonthsAgo = new Date(now.getFullYear(), now.getMonth() - 17, 1);
+    const MONTHS = ['Jan','Fev','Mar','Abr','Mai','Jun','Jul','Ago','Set','Out','Nov','Dez'];
+
+    const [statusBreakdown, prioritySummary, responseStats, resolutionStats, monthlyTrend] =
+      await Promise.all([
+        Ticket.aggregate([
+          { $match: match },
+          { $group: { _id: '$statusId', count: { $sum: 1 } } },
+          { $lookup: { from: 'ticketstatuses', localField: '_id', foreignField: '_id', as: 'status' } },
+          { $project: { status: { $arrayElemAt: ['$status', 0] }, count: 1 } },
+          { $sort: { 'status.order': 1 } }
+        ]),
+
+        Ticket.aggregate([
+          { $match: match },
+          { $group: {
+            _id: null,
+            total: { $sum: 1 },
+            low:    { $sum: { $cond: [{ $eq: ['$priority', 'low'] },    1, 0] } },
+            medium: { $sum: { $cond: [{ $eq: ['$priority', 'medium'] }, 1, 0] } },
+            high:   { $sum: { $cond: [{ $eq: ['$priority', 'high'] },   1, 0] } },
+            urgent: { $sum: { $cond: [{ $eq: ['$priority', 'urgent'] }, 1, 0] } }
+          }}
+        ]),
+
+        Ticket.aggregate([
+          { $match: match },
+          { $project: { hasResponse: { $gt: [{ $size: { $ifNull: ['$responses', []] } }, 0] } } },
+          { $group: { _id: '$hasResponse', count: { $sum: 1 } } }
+        ]),
+
+        Ticket.aggregate([
+          { $match: { ...match, resolvedAt: { $exists: true, $ne: null } } },
+          { $project: { hrs: { $divide: [{ $subtract: ['$resolvedAt', '$createdAt'] }, 3600000] } } },
+          { $group: { _id: null, avgHours: { $avg: '$hrs' } } }
+        ]),
+
+        Ticket.aggregate([
+          { $match: { ...match, createdAt: { $gte: eighteenMonthsAgo } } },
+          { $group: { _id: { year: { $year: '$createdAt' }, month: { $month: '$createdAt' } }, count: { $sum: 1 } } },
+          { $sort: { '_id.year': 1, '_id.month': 1 } }
+        ])
+      ]);
+
+    const sum = prioritySummary[0] || { total: 0, low: 0, medium: 0, high: 0, urgent: 0 };
+    return {
+      summary: {
+        totalTickets: sum.total,
+        withResponses:    responseStats.find(r => r._id === true)?.count  || 0,
+        withoutResponses: responseStats.find(r => r._id === false)?.count || 0,
+        avgResolutionHours: resolutionStats[0]?.avgHours != null
+          ? +resolutionStats[0].avgHours.toFixed(1) : null
+      },
+      byStatus: statusBreakdown.map(s => ({
+        label: s.status?.label || 'Sem status',
+        color: s.status?.color || '#6c757d',
+        count: s.count
+      })),
+      byPriority: { low: sum.low, medium: sum.medium, high: sum.high, urgent: sum.urgent },
+      monthlyTrend: monthlyTrend.map(m => ({
+        label: `${MONTHS[m._id.month - 1]}/${String(m._id.year).slice(2)}`,
+        count: m.count
+      }))
+    };
   }
 
   async dashboardByStatus(query = {}) {

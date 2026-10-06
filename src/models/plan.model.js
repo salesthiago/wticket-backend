@@ -32,6 +32,9 @@ const PlanSchema = new mongoose.Schema({
   price: { type: Number, required: true, min: 0 },
   // Ciclo de cobrança recorrente (define a recorrência no AbacatePay).
   cycle: { type: String, enum: PLAN_CYCLES, default: 'MONTHLY' },
+  // Dias de período trial gratuito para novos cadastros com este plano.
+  // 0 = sem trial (pagamento imediato).
+  trialDays: { type: Number, default: 0, min: 0 },
   // Vínculo com o Product recorrente criado no AbacatePay.
   abacateProductId: { type: String, trim: true },
   abacateProductExternalId: { type: String, trim: true },

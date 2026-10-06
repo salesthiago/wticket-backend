@@ -1,9 +1,32 @@
 import logger from '../../utils/logger.js';
 import receivableRepository from '../../repositories/financial/receivable.repository.js';
 import serviceOrderRepository from '../../repositories/service-order.repository.js';
+import projectRepository from '../../repositories/project.repository.js';
 import { PAYMENT_METHODS } from '../../models/financial/receivable.model.js';
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
+
+/**
+ * Converte um trecho de HTML (ex.: descrição rich-text de projeto) em texto
+ * simples, preservando quebras de parágrafo. Usado para preencher o campo
+ * `invoiceDescription`, que é sempre texto puro.
+ */
+function stripHtml(html) {
+  if (!html) return '';
+  return String(html)
+    .replace(/<\s*br\s*\/?\s*>/gi, '\n')
+    .replace(/<\s*\/\s*(p|div|li|h[1-6]|tr)\s*>/gi, '\n')
+    .replace(/<[^>]+>/g, '')
+    .replace(/&nbsp;/gi, ' ')
+    .replace(/&amp;/gi, '&')
+    .replace(/&lt;/gi, '<')
+    .replace(/&gt;/gi, '>')
+    .replace(/&quot;/gi, '"')
+    .replace(/&#39;/gi, "'")
+    .replace(/\n{3,}/g, '\n\n')
+    .replace(/[ \t]+\n/g, '\n')
+    .trim();
+}
 
 function isPastDue(dueDate) {
   if (!dueDate) return false;
@@ -55,11 +78,19 @@ class ReceivableService {
     const payload = {
       companyId,
       description: data.description,
+      invoiceDescription: data.invoiceDescription != null ? String(data.invoiceDescription) : '',
+      billingBreakdown: data.billingBreakdown && (data.billingBreakdown.workedHours != null || data.billingBreakdown.hourlyRate != null)
+        ? {
+            workedHours: data.billingBreakdown.workedHours != null ? Number(data.billingBreakdown.workedHours) : null,
+            hourlyRate: data.billingBreakdown.hourlyRate != null ? Number(data.billingBreakdown.hourlyRate) : null
+          }
+        : null,
       amount: Number(data.amount),
       dueDate: new Date(data.dueDate),
       paymentMethod: data.paymentMethod,
       customerId: data.customerId || null,
       serviceOrderId: data.serviceOrderId || null,
+      projectId: data.projectId || null,
       notes: data.notes || null,
       createdBy: userId,
       status: 'pending',
@@ -84,6 +115,7 @@ class ReceivableService {
 
     const patch = {};
     if (data.description !== undefined) patch.description = data.description;
+    if (data.invoiceDescription !== undefined) patch.invoiceDescription = data.invoiceDescription != null ? String(data.invoiceDescription) : '';
     if (data.amount !== undefined) patch.amount = Number(data.amount);
     if (data.dueDate !== undefined) patch.dueDate = new Date(data.dueDate);
     if (data.paymentMethod !== undefined) {
@@ -246,6 +278,7 @@ class ReceivableService {
       userId,
       data: {
         description,
+        invoiceDescription: data?.invoiceDescription != null ? String(data.invoiceDescription) : '',
         amount: data?.amount != null ? Number(data.amount) : defaultAmount,
         dueDate,
         paymentMethod: data.paymentMethod,
@@ -258,6 +291,72 @@ class ReceivableService {
 
   async listByServiceOrder(companyId, serviceOrderId) {
     const list = await receivableRepository.listByServiceOrder(companyId, serviceOrderId);
+    await recomputeStatusBulk(list);
+    return list;
+  }
+
+  // ─── Faturamento de Projeto ──────────────────────────────────────────────
+
+  /**
+   * Cria um título a receber a partir de um Projeto.
+   * O título (descrição) é sempre o número do projeto.
+   * Regras:
+   *  - Projeto não pode ter outro título ativo (não cancelado)
+   */
+  async invoiceFromProject({ companyId, userId, projectId, data }) {
+    if (!companyId) throw Object.assign(new Error('companyId é obrigatório'), { status: 422 });
+
+    const project = await projectRepository.findById(projectId, { companyId });
+    if (!project) throw Object.assign(new Error('Projeto não encontrado'), { status: 404 });
+
+    // Anti-duplicidade
+    const existing = await receivableRepository.findActiveByProject(companyId, projectId);
+    if (existing && existing.length > 0) {
+      throw Object.assign(
+        new Error(`Projeto já possui título ativo (${existing[0].number}). Cancele-o antes de faturar novamente.`),
+        { status: 422 }
+      );
+    }
+
+    if (!data?.paymentMethod) {
+      throw Object.assign(new Error('Forma de pagamento é obrigatória'), { status: 422 });
+    }
+    if (!data?.dueDate) {
+      throw Object.assign(new Error('Data de vencimento é obrigatória'), { status: 422 });
+    }
+
+    // Memória de cálculo: horas trabalhadas somadas nas tarefas x valor/hora do projeto.
+    const stats = await projectRepository.getStats(projectId, companyId);
+    const workedHours = stats.totalWorkedHours || 0;
+    const hourlyRate = project.hourlyRate || 0;
+    const computedAmount = workedHours * hourlyRate;
+
+    const customerId = data?.customerId || (project.customerId?._id || project.customerId);
+
+    // A descrição da fatura é preenchida com a descrição do projeto (texto puro).
+    const invoiceDescription = data?.invoiceDescription != null
+      ? String(data.invoiceDescription)
+      : stripHtml(project.description || '');
+
+    return await this.create({
+      companyId,
+      userId,
+      data: {
+        description: project.projectNumber,
+        invoiceDescription,
+        billingBreakdown: { workedHours, hourlyRate },
+        amount: data?.amount != null ? Number(data.amount) : computedAmount,
+        dueDate: data.dueDate,
+        paymentMethod: data.paymentMethod,
+        customerId,
+        projectId,
+        notes: data?.notes || `Faturamento do projeto ${project.projectNumber}`
+      }
+    });
+  }
+
+  async listByProject(companyId, projectId) {
+    const list = await receivableRepository.listByProject(companyId, projectId);
     await recomputeStatusBulk(list);
     return list;
   }

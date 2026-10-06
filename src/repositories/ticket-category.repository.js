@@ -1,25 +1,30 @@
 import TicketCategory from '../models/ticket-category.model.js';
 
 class TicketCategoryRepository {
-  async findAll(onlyActive = false) {
-    const query = onlyActive ? { isActive: true } : {};
+  async findAll(onlyActive = false, companyId = null) {
+    const query = { companyId: companyId ?? null };
+    if (onlyActive) query.isActive = true;
     return TicketCategory.find(query).sort({ name: 1 });
   }
 
-  async findById(id) {
-    return TicketCategory.findById(id);
+  async findById(id, companyId = null) {
+    return TicketCategory.findOne({ _id: id, companyId: companyId ?? null });
   }
 
   async create(data) {
     return TicketCategory.create(data);
   }
 
-  async update(id, data) {
-    return TicketCategory.findByIdAndUpdate(id, { $set: data }, { new: true });
+  async update(id, data, companyId = null) {
+    return TicketCategory.findOneAndUpdate(
+      { _id: id, companyId: companyId ?? null },
+      { $set: data },
+      { new: true }
+    );
   }
 
-  async delete(id) {
-    return TicketCategory.findByIdAndDelete(id);
+  async delete(id, companyId = null) {
+    return TicketCategory.findOneAndDelete({ _id: id, companyId: companyId ?? null });
   }
 }
 

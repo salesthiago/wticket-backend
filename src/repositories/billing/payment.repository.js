@@ -32,6 +32,13 @@ class PaymentRepository {
       .limit(limit);
   }
 
+  // Cobrança em aberto mais recente (usada pelo gate de billing e pelo job de
+  // expiração de trial p/ evitar duplicar cobrança enquanto a anterior
+  // seguir pendente).
+  async findLatestPendingForCompany(companyId) {
+    return await Payment.findOne({ companyId, status: 'pending' }).sort({ createdAt: -1 });
+  }
+
   async update(id, data) {
     return await Payment.findByIdAndUpdate(
       id,

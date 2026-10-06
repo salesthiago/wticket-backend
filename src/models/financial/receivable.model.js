@@ -20,6 +20,13 @@ const StatusHistorySchema = new mongoose.Schema({
   changedAt: { type: Date, default: Date.now }
 }, { _id: false });
 
+// Detalhamento do cálculo do valor quando o título é gerado a partir de um
+// projeto: horas trabalhadas somadas nas tarefas x valor/hora do projeto.
+const BillingBreakdownSchema = new mongoose.Schema({
+  workedHours: { type: Number, default: null },
+  hourlyRate: { type: Number, default: null }
+}, { _id: false });
+
 const ReceivableSchema = new mongoose.Schema({
   companyId: {
     type: mongoose.Schema.Types.ObjectId,
@@ -32,6 +39,13 @@ const ReceivableSchema = new mongoose.Schema({
   number: { type: String, index: true },
 
   description: { type: String, required: true, trim: true },
+
+  // Texto detalhado exibido na fatura impressa. Quando o título nasce de um
+  // projeto, é preenchido automaticamente com a descrição do projeto.
+  invoiceDescription: { type: String, trim: true, default: '' },
+
+  // Memória de cálculo do valor (preenchida no faturamento a partir de projeto).
+  billingBreakdown: { type: BillingBreakdownSchema, default: null },
 
   amount: { type: Number, required: true, min: 0 },
 
@@ -64,6 +78,12 @@ const ReceivableSchema = new mongoose.Schema({
     index: true,
     default: null
   },
+  projectId: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'Project',
+    index: true,
+    default: null
+  },
 
   notes: { type: String, trim: true },
   cancelReason: { type: String, trim: true },
@@ -83,6 +103,7 @@ ReceivableSchema.index({ companyId: 1, isActive: 1, createdAt: -1 });
 ReceivableSchema.index({ companyId: 1, status: 1, dueDate: 1 });
 ReceivableSchema.index({ companyId: 1, customerId: 1 });
 ReceivableSchema.index({ companyId: 1, serviceOrderId: 1 });
+ReceivableSchema.index({ companyId: 1, projectId: 1 });
 ReceivableSchema.index({ companyId: 1, number: 1 }, { unique: true, sparse: true });
 
 // Numeração sequencial por empresa, ano e prefixo REC

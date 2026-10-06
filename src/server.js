@@ -3,6 +3,8 @@ import http from "http";
 import app from "./app.js";
 import { connectWithRetry } from "./config/database.js";
 import logger from "./utils/logger.js";
+import pendingDebtNotifierJob from "./jobs/pending-debt-notifier.job.js";
+import trialExpirationJob from "./jobs/trial-expiration.job.js";
 // import { Server } from "socket.io";
 // import { verifyToken } from "./middleware/auth.middleware.js";
 // import { initSocket } from "./services/socket.service.js";
@@ -11,6 +13,16 @@ import logger from "./utils/logger.js";
 dotenv.config();
 
 const PORT = process.env.PORT || 3000;
+
+// Rede de seguranca: no Node >= 15 uma promessa rejeitada sem tratamento encerra o
+// processo (PM2 reinicia → nginx devolve 502 para TODAS as rotas durante o gap).
+// Aqui apenas registramos — um erro de provedor externo não pode derrubar o app.
+process.on('unhandledRejection', (reason) => {
+  logger.error('⚠️  unhandledRejection (ignorado):', reason);
+});
+process.on('uncaughtException', (err) => {
+  logger.error('⚠️  uncaughtException (ignorado):', err);
+});
 
 connectWithRetry();
 
@@ -69,6 +81,9 @@ logger.info("══════════════════════�
 //
 // logger.info("🔌 Inicializando Socket.IO handlers...");
 // initSocket(io);
+
+pendingDebtNotifierJob.start();
+trialExpirationJob.start();
 
 server.listen(PORT, () => {
   logger.info("\n════════════════════════════════════════════════════════════");
