@@ -178,7 +178,8 @@ class NfseIssuerService {
     const cTribMun = input.cTribMun || serviceCode?.cTribMun;
     const cNBS = input.cNBS || serviceCode?.cNBS;
     const xDescServ = input.xDescServ || input.descricao || serviceCode?.descricao;
-    const cLocPrestacao = input.cLocPrestacao || config.cMun;
+    // Local de prestação = município do tomador; prestador só como último recurso
+    const cLocPrestacao = input.cLocPrestacao || tomador?.endereco?.cMun || config.cMun;
 
     const servico = {
       cTribNac,
