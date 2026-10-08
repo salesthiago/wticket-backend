@@ -292,8 +292,10 @@ export function buildDpsXml(payload) {
   if (!servico?.cTribNac) throw new Error('cTribNac é obrigatório');
   if (!servico?.xDescServ) throw new Error('Descrição do serviço é obrigatória');
 
+  // O Id deve usar o mesmo município da tag cLocEmi (validação E0004)
+  const cLocEmiFinal = String(cLocEmiTag || cLocEmi);
   const dpsId = 'DPS' + buildDpsKey({
-    cMun: cLocEmi,
+    cMun: cLocEmiFinal,
     documentEmitter: prestador.document,
     serie,
     nDPS
@@ -310,8 +312,7 @@ export function buildDpsXml(payload) {
   infDPS.ele('nDPS').txt(String(nDPS));
   infDPS.ele('dCompet').txt(formatDate(dCompet || dhEmi));
   infDPS.ele('tpEmit').txt(String(tpEmit));
-  // Id usa o município real; a tag pode diferir (ex.: homologação ISSNet)
-  infDPS.ele('cLocEmi').txt(String(cLocEmiTag || cLocEmi));
+  infDPS.ele('cLocEmi').txt(cLocEmiFinal);
 
   buildPrestador(infDPS, prestador, regTrib);
   buildTomador(infDPS, tomador);

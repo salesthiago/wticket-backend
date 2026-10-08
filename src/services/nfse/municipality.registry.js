@@ -26,7 +26,7 @@ export const MUNICIPALITIES = {
     },
     docs: 'https://www.issnetonline.com.br/goiania/',
     // A homologação da Nota Control roda sobre a base de Campo Grande/MS:
-    // a tag cLocEmi deve levar 5002704 (o Id da DPS mantém o cMun real).
+    // cLocEmi (e o Id da DPS, que deve casar com ele) usam 5002704.
     cLocEmiHomologacao: '5002704'
   },
   '5201405': {
