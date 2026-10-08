@@ -57,34 +57,42 @@ export const NFSE_OPERATIONS = {
   }
 };
 
-const SOAP_NS = 'http://www.w3.org/2003/05/soap-envelope';
+// ISSNet (Nota Control / wsnfsenacional) é um ASMX SOAP 1.1. Formato conferido
+// com o provedor ISSNetAPIPropria do ACBr: <nfse:Metodo> com nfseCabecMsg e
+// nfseDadosMsg contendo o XML direto (sem CDATA e sem declaração XML).
+const SOAP_NS = 'http://schemas.xmlsoap.org/soap/envelope/';
 const NFSE_NS = 'http://www.sped.fazenda.gov.br/nfse';
 
-function escapeXmlForSoap(xmlStr) {
-  // O conteúdo XML é encapsulado em CDATA para preservar a assinatura
-  return `<![CDATA[${xmlStr}]]>`;
+function stripXmlDeclaration(xmlStr) {
+  return String(xmlStr).replace(/^\s*<\?xml[^?]*\?>\s*/, '');
 }
 
 /**
- * Monta o envelope SOAP 1.2 conforme padrão ABRASF/NFS-e Nacional.
+ * Monta o envelope SOAP 1.1 conforme padrão ABRASF/NFS-e Nacional (ISSNet).
  */
 export function buildSoapEnvelope({ method, versaoDados = '1.01', xmlMessage }) {
   return [
-    '<?xml version="1.0" encoding="UTF-8"?>',
-    `<soap:Envelope xmlns:soap="${SOAP_NS}" xmlns:nfse="${NFSE_NS}">`,
-    '<soap:Header/>',
-    '<soap:Body>',
-    `<nfse:${method}Request>`,
+    `<soapenv:Envelope xmlns:soapenv="${SOAP_NS}" xmlns:nfse="${NFSE_NS}">`,
+    '<soapenv:Header/>',
+    '<soapenv:Body>',
+    `<nfse:${method}>`,
     '<nfseCabecMsg>',
-    `<![CDATA[<cabecalho versao="${versaoDados}" xmlns="${NFSE_NS}"><versaoDados>${versaoDados}</versaoDados></cabecalho>]]>`,
+    `<cabecalho versao="${versaoDados}" xmlns="${NFSE_NS}"><versaoDados>${versaoDados}</versaoDados></cabecalho>`,
     '</nfseCabecMsg>',
     '<nfseDadosMsg>',
-    escapeXmlForSoap(xmlMessage),
+    stripXmlDeclaration(xmlMessage),
     '</nfseDadosMsg>',
-    `</nfse:${method}Request>`,
-    '</soap:Body>',
-    '</soap:Envelope>'
+    `</nfse:${method}>`,
+    '</soapenv:Body>',
+    '</soapenv:Envelope>'
   ].join('');
+}
+
+/**
+ * Envolve a DPS assinada no elemento de envio do GerarNfse.
+ */
+export function wrapGerarNfseEnvio(dpsXmlSigned) {
+  return `<GerarNfseEnvio xmlns="${NFSE_NS}">${stripXmlDeclaration(dpsXmlSigned)}</GerarNfseEnvio>`;
 }
 
 /**
@@ -142,9 +150,9 @@ export async function sendSoap({ endpoint, operationKey, xmlMessage, versaoDados
   try {
     const resp = await axios.post(endpoint, envelope, {
       headers: {
-        'Content-Type': 'application/soap+xml; charset=utf-8',
-        'SOAPAction': op.soapAction,
-        'Accept': 'application/soap+xml, text/xml, application/xml'
+        'Content-Type': 'text/xml; charset=utf-8',
+        'SOAPAction': `"${op.soapAction}"`,
+        'Accept': 'text/xml, application/xml'
       },
       httpsAgent,
       timeout: timeoutMs,
@@ -181,6 +189,7 @@ export async function sendSoap({ endpoint, operationKey, xmlMessage, versaoDados
 export default {
   NFSE_OPERATIONS,
   buildSoapEnvelope,
+  wrapGerarNfseEnvio,
   parseSoapResponse,
   sendSoap
 };

@@ -8,7 +8,7 @@ import certificateService from './certificate.service.js';
 import { resolveEndpoint } from './municipality.registry.js';
 import { buildDpsXml, computeValues } from './xml-builder.service.js';
 import { signDps } from './xml-signer.service.js';
-import { sendSoap, NFSE_OPERATIONS } from './soap-client.service.js';
+import { sendSoap, wrapGerarNfseEnvio, NFSE_OPERATIONS } from './soap-client.service.js';
 import ibgeService from './ibge.service.js';
 import { XMLParser } from 'fast-xml-parser';
 
@@ -229,6 +229,8 @@ class NfseIssuerService {
       serviceOrderId: input.serviceOrderId || null,
       serie: config.serie,
       nDPS,
+      // Número da NFS-e segue o mesmo número da DPS
+      numeroNfse: String(nDPS),
       tpAmb: config.ambiente,
       tpEmit: 1,
       cLocEmi: config.cMun,
@@ -284,7 +286,7 @@ class NfseIssuerService {
       const ws = await sendSoap({
         endpoint,
         operationKey: 'GERAR_NFSE',
-        xmlMessage: dpsXmlSigned,
+        xmlMessage: wrapGerarNfseEnvio(dpsXmlSigned),
         versaoDados: '1.01',
         // ISSNet exige o certificado A1 também na conexão HTTPS (mTLS)
         tlsCertificate: cert
@@ -311,13 +313,13 @@ class NfseIssuerService {
 
       if (result.success) {
         issuance.chaveAcesso = result.chaveAcesso || null;
-        issuance.numeroNfse = result.numeroNfse || null;
+        issuance.numeroNfse = String(issuance.nDPS);
         issuance.cStat = result.cStat || null;
         issuance.dhProc = result.dhProc || new Date();
         issuance.protocolo = result.protocolo || null;
         issuance.urlConsulta = result.urlConsulta || null;
         issuance.mensagensRetorno = result.mensagens || [];
-        issuance.pushStatus('authorized', `NFS-e ${result.numeroNfse || ''} autorizada`);
+        issuance.pushStatus('authorized', `NFS-e ${issuance.numeroNfse} autorizada`);
       } else {
         issuance.mensagensRetorno = result.mensagens || [];
         issuance.pushStatus('rejected', result.mensagens?.[0]?.mensagem || 'Rejeitada');
@@ -359,6 +361,18 @@ class NfseIssuerService {
     // Navega genérica e tolerante a variações
     const env = ws.parsed.Envelope || ws.parsed;
     const body = env?.Body || env;
+
+    // SOAP Fault: erro de estrutura da chamada (antes de validar a DPS)
+    if (body?.Fault) {
+      const fault = body.Fault;
+      return {
+        success: false,
+        mensagens: [{
+          codigo: String(fault.faultcode || fault.Code?.Value || ws.httpStatus || 'SOAP'),
+          mensagem: `SOAP Fault: ${fault.faultstring || fault.Reason?.Text || 'erro não informado'}`
+        }]
+      };
+    }
     const respKey = Object.keys(body || {}).find(k => /Response$/i.test(k) || /Resposta$/i.test(k));
     const wrapper = respKey ? body[respKey] : body;
 
@@ -406,11 +420,13 @@ class NfseIssuerService {
 
     if (lista) {
       const comp = lista.CompNfse || lista;
-      const nfse = comp.Nfse || comp;
-      const infNfse = nfse.InfNfse || nfse.infNfse || nfse;
+      // Padrão Nacional (ISSNet): CompNfse > NFSe > infNFSe (Id="NFS<chave>")
+      const nfse = comp.NFSe || comp.Nfse || comp;
+      const infNfse = nfse.infNFSe || nfse.InfNfse || nfse.infNfse || nfse;
+      const idAttr = infNfse?.['@_Id'] || infNfse?.['@_id'] || null;
       return {
         success: true,
-        chaveAcesso: infNfse?.ChaveAcesso || infNfse?.chNFSe || null,
+        chaveAcesso: infNfse?.ChaveAcesso || infNfse?.chNFSe || (idAttr ? String(idAttr).replace(/^NFS/, '') : null),
         numeroNfse: infNfse?.Numero || infNfse?.nNFSe || null,
         cStat: infNfse?.cStat || null,
         dhProc: infNfse?.dhProc ? new Date(infNfse.dhProc) : null,
@@ -576,7 +592,7 @@ class NfseIssuerService {
       const ws = await sendSoap({
         endpoint,
         operationKey: 'GERAR_NFSE',
-        xmlMessage: issuance.xmlDpsAssinado,
+        xmlMessage: wrapGerarNfseEnvio(issuance.xmlDpsAssinado),
         versaoDados: '1.01',
         tlsCertificate: cert
       });
@@ -600,13 +616,13 @@ class NfseIssuerService {
 
       if (result.success) {
         issuance.chaveAcesso = result.chaveAcesso || null;
-        issuance.numeroNfse = result.numeroNfse || null;
+        issuance.numeroNfse = String(issuance.nDPS);
         issuance.cStat = result.cStat || null;
         issuance.dhProc = result.dhProc || new Date();
         issuance.protocolo = result.protocolo || null;
         issuance.urlConsulta = result.urlConsulta || null;
         issuance.mensagensRetorno = result.mensagens || [];
-        issuance.pushStatus('authorized', `NFS-e ${result.numeroNfse || ''} autorizada`);
+        issuance.pushStatus('authorized', `NFS-e ${issuance.numeroNfse} autorizada`);
       } else {
         issuance.mensagensRetorno = result.mensagens || [];
         issuance.pushStatus('rejected', result.mensagens?.[0]?.mensagem || 'Rejeitada');
