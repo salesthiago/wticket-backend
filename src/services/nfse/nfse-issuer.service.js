@@ -5,7 +5,7 @@ import nfseIssuanceRepository from '../../repositories/nfse/nfse-issuance.reposi
 import companyRepository from '../../repositories/company.repository.js';
 import customerRepository from '../../repositories/customer.repository.js';
 import certificateService from './certificate.service.js';
-import { resolveEndpoint } from './municipality.registry.js';
+import { resolveEndpoint, resolveCLocEmi } from './municipality.registry.js';
 import { buildDpsXml, computeValues } from './xml-builder.service.js';
 import { signDps } from './xml-signer.service.js';
 import { sendSoap, wrapGerarNfseEnvio, NFSE_OPERATIONS } from './soap-client.service.js';
@@ -254,6 +254,7 @@ class NfseIssuerService {
       };
       const { xml: dpsXmlPlain, dpsId } = buildDpsXml({
         cLocEmi: config.cMun,
+        cLocEmiTag: resolveCLocEmi(config.cMun, config.ambiente),
         tpAmb: config.ambiente,
         tpEmit: 1,
         verAplic: config.verAplic,
@@ -516,6 +517,7 @@ class NfseIssuerService {
     };
     const { xml: dpsXmlPlain, dpsId } = buildDpsXml({
       cLocEmi:  config.cMun,
+      cLocEmiTag: resolveCLocEmi(config.cMun, config.ambiente),
       tpAmb:    config.ambiente,
       tpEmit:   issuance.tpEmit,
       verAplic: config.verAplic,

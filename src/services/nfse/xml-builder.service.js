@@ -93,13 +93,11 @@ function buildEndereco(parent, party) {
 }
 
 function buildPrestador(infDPS, prestador, regTrib) {
+  // Quando o prestador é o emitente (tpEmit=1), nome/endereço/contato vêm do
+  // cadastro da prefeitura e não são informados (mesmo layout do ACBr p/ ISSNet).
   const prest = infDPS.ele('prest');
   buildPartyDoc(prest, prestador);
   if (prestador.inscricaoMunicipal) prest.ele('IM').txt(String(prestador.inscricaoMunicipal));
-  prest.ele('xNome').txt(prestador.nome);
-  buildEndereco(prest, prestador);
-  if (prestador.fone) prest.ele('fone').txt(onlyDigits(prestador.fone));
-  if (prestador.email) prest.ele('email').txt(prestador.email);
 
   const rt = prest.ele('regTrib');
   const opSimpNac = Number(regTrib.opSimpNac ?? 1);
@@ -139,8 +137,10 @@ function buildServico(infDPS, servico) {
 
   const cServ = serv.ele('cServ');
   cServ.ele('cTribNac').txt(String(servico.cTribNac));
-  if (servico.cTribMun) cServ.ele('cTribMun').txt(String(servico.cTribMun));
-  cServ.ele('xDescServ').txt(servico.xDescServ);
+  // ISSNet: cTribMun numérico (sem zeros à esquerda) e quebra de linha como '|'
+  const cTribMun = parseInt(onlyDigits(servico.cTribMun), 10);
+  if (cTribMun > 0) cServ.ele('cTribMun').txt(String(cTribMun));
+  cServ.ele('xDescServ').txt(String(servico.xDescServ).trim().replace(/\r?\n/g, '|'));
   if (servico.cNBS) cServ.ele('cNBS').txt(String(servico.cNBS));
   if (servico.cIntContrib) cServ.ele('cIntContrib').txt(String(servico.cIntContrib));
 }
@@ -269,6 +269,7 @@ export function computeValues(input) {
 export function buildDpsXml(payload) {
   const {
     cLocEmi,
+    cLocEmiTag,
     tpAmb,
     tpEmit = 1,
     dhEmi = new Date(),
@@ -309,7 +310,8 @@ export function buildDpsXml(payload) {
   infDPS.ele('nDPS').txt(String(nDPS));
   infDPS.ele('dCompet').txt(formatDate(dCompet || dhEmi));
   infDPS.ele('tpEmit').txt(String(tpEmit));
-  infDPS.ele('cLocEmi').txt(String(cLocEmi));
+  // Id usa o município real; a tag pode diferir (ex.: homologação ISSNet)
+  infDPS.ele('cLocEmi').txt(String(cLocEmiTag || cLocEmi));
 
   buildPrestador(infDPS, prestador, regTrib);
   buildTomador(infDPS, tomador);

@@ -24,7 +24,10 @@ export const MUNICIPALITIES = {
       homologacao: 'https://nfse.issnetonline.com.br/wsnfsenacional/homologacao/nfse.asmx',
       producao: 'https://nfse.issnetonline.com.br/wsnfsenacional/goiania/nfse.asmx'
     },
-    docs: 'https://www.issnetonline.com.br/goiania/'
+    docs: 'https://www.issnetonline.com.br/goiania/',
+    // A homologação da Nota Control roda sobre a base de Campo Grande/MS:
+    // a tag cLocEmi deve levar 5002704 (o Id da DPS mantém o cMun real).
+    cLocEmiHomologacao: '5002704'
   },
   '5201405': {
     cMun: '5201405',
@@ -52,6 +55,16 @@ export function listMunicipalities() {
     provider: m.provider,
     layout: m.layout
   }));
+}
+
+/**
+ * Código a informar na tag cLocEmi: alguns provedores exigem outro município
+ * no ambiente de homologação.
+ */
+export function resolveCLocEmi(cMun, ambiente) {
+  const m = getMunicipality(cMun);
+  if (String(ambiente) !== '1' && m?.cLocEmiHomologacao) return m.cLocEmiHomologacao;
+  return String(cMun);
 }
 
 export function resolveEndpoint(cMun, ambiente) {
