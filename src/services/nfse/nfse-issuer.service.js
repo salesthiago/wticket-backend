@@ -285,7 +285,9 @@ class NfseIssuerService {
         endpoint,
         operationKey: 'GERAR_NFSE',
         xmlMessage: dpsXmlSigned,
-        versaoDados: '1.01'
+        versaoDados: '1.01',
+        // ISSNet exige o certificado A1 também na conexão HTTPS (mTLS)
+        tlsCertificate: cert
       });
 
       // 11. Auditoria
@@ -565,6 +567,8 @@ class NfseIssuerService {
       );
     }
 
+    const cert = certificateService.loadStoredCertificate(config.certificate);
+
     issuance.pushStatus('sending', 'Retransmissão: enviando DPS ao webservice');
     await issuance.save();
 
@@ -573,7 +577,8 @@ class NfseIssuerService {
         endpoint,
         operationKey: 'GERAR_NFSE',
         xmlMessage: issuance.xmlDpsAssinado,
-        versaoDados: '1.01'
+        versaoDados: '1.01',
+        tlsCertificate: cert
       });
 
       await nfseIssuanceRepository.logWsCall({

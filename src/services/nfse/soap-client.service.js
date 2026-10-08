@@ -125,10 +125,12 @@ export async function sendSoap({ endpoint, operationKey, xmlMessage, versaoDados
   // mTLS opcional — se a prefeitura exigir certificado de transmissão
   let httpsAgent;
   if (tlsCertificate?.certPem && tlsCertificate?.keyPem) {
+    // A cadeia do PFX (intermediárias ICP-Brasil) vai junto com o certificado
+    // do cliente. Não usar `ca` aqui: ele substitui as CAs confiáveis usadas
+    // para validar o certificado do servidor da prefeitura.
     httpsAgent = new https.Agent({
-      cert: tlsCertificate.certPem,
+      cert: [tlsCertificate.certPem, ...(tlsCertificate.caPems || [])].join('\n'),
       key: tlsCertificate.keyPem,
-      ca: tlsCertificate.caPems,
       rejectUnauthorized: true,
       keepAlive: false
     });

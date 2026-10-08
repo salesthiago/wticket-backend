@@ -66,12 +66,14 @@ export function parsePfx(pfxBuffer, password) {
     throw new Error('Chave privada não encontrada no PFX');
   }
 
-  const cert = certs[0];
   const key = keys[0];
+  // A ordem dos certificados no PFX não é garantida: o do titular é o que
+  // corresponde à chave privada; os demais são a cadeia (intermediárias/raiz).
+  const cert = certs.find(c => c.publicKey?.n && key.n && c.publicKey.n.equals(key.n)) || certs[0];
 
   const certPem = forge.pki.certificateToPem(cert);
   const keyPem = forge.pki.privateKeyToPem(key);
-  const caPems = certs.slice(1).map(c => forge.pki.certificateToPem(c));
+  const caPems = certs.filter(c => c !== cert).map(c => forge.pki.certificateToPem(c));
 
   const cnpj = extractCnpjFromSAN(cert);
 
