@@ -145,7 +145,7 @@ function buildServico(infDPS, servico) {
   if (servico.cIntContrib) cServ.ele('cIntContrib').txt(String(servico.cIntContrib));
 }
 
-function buildValores(infDPS, valores) {
+function buildValores(infDPS, valores, regTrib) {
   const v = infDPS.ele('valores');
 
   const vServPrest = v.ele('vServPrest');
@@ -192,8 +192,23 @@ function buildValores(infDPS, valores) {
     }
   }
 
+  // Totais aproximados (Lei 12.741). Não optante do SN não pode usar
+  // indTotTrib/pTotTribSN (E0713): informa valores — municipal = ISSQN,
+  // federal = tributos federais informados na nota.
   const totTrib = trib.ele('totTrib');
-  totTrib.ele('indTotTrib').txt('0'); // 0=Não informa total de tributos
+  if (Number(regTrib?.opSimpNac ?? 1) === 1) {
+    const vBC = valores.vBC ?? Math.max(0, valores.vServ - (valores.descIncond || 0));
+    const vFed = ['pis', 'cofins', 'irrf', 'csll', 'cp']
+      .filter(k => valores[k]?.retido)
+      .reduce((acc, k) => acc + vBC * (Number(valores[k].aliq || 0) / 100), 0);
+    const vMun = valores.vISSQN ?? vBC * (Number(valores.issqn?.pAliq || 0) / 100);
+    const vTotTrib = totTrib.ele('vTotTrib');
+    vTotTrib.ele('vTotTribFed').txt(fmtDecimal(vFed, 2));
+    vTotTrib.ele('vTotTribEst').txt('0.00');
+    vTotTrib.ele('vTotTribMun').txt(fmtDecimal(vMun, 2));
+  } else {
+    totTrib.ele('indTotTrib').txt('0'); // 0=Não informa total de tributos
+  }
 }
 
 // Valores padrão do grupo IBSCBS (Reforma Tributária) para serviço comum
@@ -317,8 +332,13 @@ export function buildDpsXml(payload) {
   buildPrestador(infDPS, prestador, regTrib);
   buildTomador(infDPS, tomador);
   buildIntermediario(infDPS, intermediario);
-  buildServico(infDPS, servico);
-  buildValores(infDPS, valores);
+  // Homologação ISSNet (cLocEmi substituto): prestação no município do
+  // emitente também usa o código substituto, senão vira tributação fora (EM074)
+  const servicoXml = (cLocEmiTag && String(cLocEmiTag) !== String(cLocEmi) && String(servico.cLocPrestacao) === String(cLocEmi))
+    ? { ...servico, cLocPrestacao: String(cLocEmiTag) }
+    : servico;
+  buildServico(infDPS, servicoXml);
+  buildValores(infDPS, valores, regTrib);
   buildIbsCbs(infDPS, ibscbs);
 
   const xml = root.end({ prettyPrint: false, headless: false });
