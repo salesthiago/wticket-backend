@@ -14,13 +14,17 @@ export const MUNICIPALITIES = {
     cMun: '5208707',
     uf: 'GO',
     name: 'Goiânia',
-    provider: 'goiania',
+    provider: 'issnet',
     layout: 'abrasf-nacional-1.01',
+    // Desde 01/10/2025 Goiânia usa o provedor ISSNet. Estes são os endpoints
+    // "Nota Control" do Padrão Nacional (DPS). O endpoint ABRASF 2.04
+    // (https://nfse.issnetonline.com.br/abrasf204/goiania/nfse.asmx) usa
+    // outro layout (RPS) e não é compatível com o xml-builder atual.
     endpoints: {
-      homologacao: 'https://nfse-hom.goiania.go.gov.br/ws/nfse',
-      producao: 'https://nfse.goiania.go.gov.br/ws/nfse'
+      homologacao: 'https://nfse.issnetonline.com.br/wsnfsenacional/homologacao/nfse.asmx',
+      producao: 'https://nfse.issnetonline.com.br/wsnfsenacional/goiania/nfse.asmx'
     },
-    docs: 'https://www.goiania.go.gov.br/sefin/nfse'
+    docs: 'https://www.issnetonline.com.br/goiania/'
   },
   '5201405': {
     cMun: '5201405',
