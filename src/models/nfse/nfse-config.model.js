@@ -57,6 +57,15 @@ const NfseConfigSchema = new mongoose.Schema({
   regApTribSN: { type: Number, enum: NFSE_REG_AP_TRIB_SN },
   regEspTrib: { type: Number, enum: NFSE_REG_ESP_TRIB, default: 0 },
 
+  // Reforma Tributária (DPS - grupo IBSCBS, obrigatório). Códigos como string.
+  ibscbs: {
+    cIndOp: { type: String, match: /^\d{6}$/, default: '100301' },
+    CST: { type: String, match: /^\d{3}$/, default: '000' },
+    cClassTrib: { type: String, match: /^\d{6}$/, default: '000001' },
+    indDest: { type: String, enum: ['0', '1'], default: '0' },
+    indFinal: { type: String, enum: ['0', '1'] }
+  },
+
   // Numeração da DPS (controle interno do contribuinte)
   serie: { type: Number, default: 1, min: 1 },
   proximoNumeroDps: { type: Number, default: 1, min: 1 },

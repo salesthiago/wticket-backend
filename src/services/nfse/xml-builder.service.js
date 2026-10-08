@@ -37,42 +37,15 @@ const fmtDecimal = (n, dec = 2) => {
   return Number(n).toFixed(dec);
 };
 
-// Calcula DV módulo 11 (esquema NFS-e/SEFAZ comum)
-function mod11Dv(num) {
-  const digits = String(num).split('').map(Number);
-  let weight = 2;
-  let sum = 0;
-  for (let i = digits.length - 1; i >= 0; i--) {
-    sum += digits[i] * weight;
-    weight = weight === 9 ? 2 : weight + 1;
-  }
-  const rem = sum % 11;
-  const dv = 11 - rem;
-  return dv >= 10 ? 0 : dv;
-}
-
 /**
- * Gera o atributo Id (e a chave correspondente) da DPS conforme
- * padrão NFS-e Nacional (50 dígitos). O formato exato pode variar entre
- * provedores/municípios — ajustar quando confirmado em homologação.
- *
- * Composição (50 dígitos):
- *   cMun(7) + AAMM(4) + cnpjCpfPad(14) + tpEmit(1) + serie(5) + nDPS(15) + DV(4)
+ * Gera os 42 dígitos do atributo Id da DPS (Id = "DPS" + 42 dígitos),
+ * conforme XSD v1.01 (pattern DPS[0-9]{42}):
+ *   cMun(7) + tpInsc(1: 1=CPF, 2=CNPJ) + inscrição(14) + serie(5) + nDPS(15)
  */
-export function buildDpsKey({ cMun, dCompet, documentEmitter, tpEmit, serie, nDPS }) {
-  const compet = dCompet instanceof Date ? dCompet : new Date(dCompet);
-  const aa = String(compet.getFullYear()).slice(-2);
-  const mm = String(compet.getMonth() + 1).padStart(2, '0');
-  const docPad = padLeft(onlyDigits(documentEmitter), 14);
-  const seriePad = padLeft(serie, 5);
-  const nPad = padLeft(nDPS, 15);
-  const base = `${cMun}${aa}${mm}${docPad}${tpEmit}${seriePad}${nPad}`;
-  // base = 7 + 4 + 14 + 1 + 5 + 15 = 46 dígitos → completar 50 com DV(4)
-  const dv1 = mod11Dv(base);
-  const dv2 = mod11Dv(base + dv1);
-  const dvFull = `${dv1}${dv2}`.padStart(4, '0');
-  const key = `${base}${dvFull}`;
-  return key;
+export function buildDpsKey({ cMun, documentEmitter, serie, nDPS }) {
+  const doc = onlyDigits(documentEmitter);
+  const tpInsc = doc.length === 11 ? '1' : '2';
+  return `${cMun}${tpInsc}${padLeft(doc, 14)}${padLeft(serie, 5)}${padLeft(nDPS, 15)}`;
 }
 
 // ─── Builders de blocos ───────────────────────────────────────────────────────
@@ -93,12 +66,18 @@ function buildPartyDoc(node, party) {
 function buildEndereco(parent, party) {
   if (!party?.endereco) return;
   const e = party.endereco;
+  // O grupo <end> é opcional, mas quando presente o XSD exige endNac(cMun+CEP)
+  // ou endExt, além de xLgr, nro e xBairro. Endereço incompleto é omitido.
+  const cep = onlyDigits(e.cep);
+  const hasLocal = e.cMun ? cep.length === 8 : !!e.cPais;
+  if (!hasLocal || !e.xLgr || !e.xBairro) return;
+
   const end = parent.ele('end');
 
   if (e.cMun) {
     const endNac = end.ele('endNac');
     endNac.ele('cMun').txt(String(e.cMun));
-    if (e.cep) endNac.ele('CEP').txt(padLeft(onlyDigits(e.cep), 8));
+    endNac.ele('CEP').txt(cep);
   } else if (e.cPais) {
     const endExt = end.ele('endExt');
     endExt.ele('cPais').txt(e.cPais);
@@ -107,10 +86,10 @@ function buildEndereco(parent, party) {
     if (e.xEstProvReg) endExt.ele('xEstProvReg').txt(e.xEstProvReg);
   }
 
-  if (e.xLgr) end.ele('xLgr').txt(e.xLgr);
-  if (e.nro) end.ele('nro').txt(e.nro);
+  end.ele('xLgr').txt(e.xLgr);
+  end.ele('nro').txt(e.nro ? String(e.nro) : 'S/N');
   if (e.xCpl) end.ele('xCpl').txt(e.xCpl);
-  if (e.xBairro) end.ele('xBairro').txt(e.xBairro);
+  end.ele('xBairro').txt(e.xBairro);
 }
 
 function buildPrestador(infDPS, prestador, regTrib) {
@@ -123,8 +102,10 @@ function buildPrestador(infDPS, prestador, regTrib) {
   if (prestador.email) prest.ele('email').txt(prestador.email);
 
   const rt = prest.ele('regTrib');
-  rt.ele('opSimpNac').txt(String(regTrib.opSimpNac ?? 1));
-  if (regTrib.regApTribSN != null) rt.ele('regApTribSN').txt(String(regTrib.regApTribSN));
+  const opSimpNac = Number(regTrib.opSimpNac ?? 1);
+  rt.ele('opSimpNac').txt(String(opSimpNac));
+  // regApTribSN só existe para optante ME/EPP (opSimpNac = 3)
+  if (opSimpNac === 3 && regTrib.regApTribSN != null) rt.ele('regApTribSN').txt(String(regTrib.regApTribSN));
   rt.ele('regEspTrib').txt(String(regTrib.regEspTrib ?? 0));
 }
 
@@ -151,9 +132,10 @@ function buildIntermediario(infDPS, intermediario) {
 function buildServico(infDPS, servico) {
   const serv = infDPS.ele('serv');
 
+  // Choice no XSD: município (IBGE) ou país (ISO alfa-2), nunca os dois
   const locPrest = serv.ele('locPrest');
-  locPrest.ele('cLocPrestacao').txt(String(servico.cLocPrestacao));
-  if (servico.cPaisPrestacao) locPrest.ele('cPaisPrestacao').txt(servico.cPaisPrestacao);
+  if (servico.cLocPrestacao) locPrest.ele('cLocPrestacao').txt(String(servico.cLocPrestacao));
+  else locPrest.ele('cPaisPrestacao').txt(String(servico.cPaisPrestacao));
 
   const cServ = serv.ele('cServ');
   cServ.ele('cTribNac').txt(String(servico.cTribNac));
@@ -190,8 +172,8 @@ function buildValores(infDPS, valores) {
       const piscofins = tribFed.ele('piscofins');
       piscofins.ele('CST').txt('01');
       piscofins.ele('vBCPisCofins').txt(fmtDecimal(valores.vServ - (valores.descIncond || 0), 2));
-      piscofins.ele('pAliqPis').txt(fmtDecimal(valores.pis.aliq || 0, 4));
-      piscofins.ele('pAliqCofins').txt(fmtDecimal(valores.cofins?.aliq || 0, 4));
+      piscofins.ele('pAliqPis').txt(fmtDecimal(valores.pis.aliq || 0, 2));
+      piscofins.ele('pAliqCofins').txt(fmtDecimal(valores.cofins?.aliq || 0, 2));
     }
     if (valores.irrf?.retido) {
       const irrf = tribFed.ele('irrf');
@@ -212,6 +194,28 @@ function buildValores(infDPS, valores) {
 
   const totTrib = trib.ele('totTrib');
   totTrib.ele('indTotTrib').txt('0'); // 0=Não informa total de tributos
+}
+
+// Valores padrão do grupo IBSCBS (Reforma Tributária) para serviço comum
+// tributado integralmente. Códigos são strings: zeros à esquerda importam.
+export const IBSCBS_DEFAULTS = {
+  finNFSe: '0',          // NFS-e regular
+  cIndOp: '100301',      // demais serviços, operação onerosa
+  indDest: '0',          // destinatário é o próprio tomador
+  CST: '000',            // tributação integral
+  cClassTrib: '000001'   // situações tributadas integralmente pelo IBS e CBS
+};
+
+function buildIbsCbs(infDPS, ibscbs = {}) {
+  const v = { ...IBSCBS_DEFAULTS, ...Object.fromEntries(Object.entries(ibscbs).filter(([, x]) => x != null && x !== '')) };
+  const g = infDPS.ele('IBSCBS');
+  g.ele('finNFSe').txt(String(v.finNFSe));
+  if (v.indFinal != null) g.ele('indFinal').txt(String(v.indFinal));
+  g.ele('cIndOp').txt(String(v.cIndOp));
+  g.ele('indDest').txt(String(v.indDest));
+  const gIBSCBS = g.ele('valores').ele('trib').ele('gIBSCBS');
+  gIBSCBS.ele('CST').txt(String(v.CST));
+  gIBSCBS.ele('cClassTrib').txt(String(v.cClassTrib));
 }
 
 // ─── Cálculo de totais ────────────────────────────────────────────────────────
@@ -277,7 +281,8 @@ export function buildDpsXml(payload) {
     intermediario,
     servico,
     valores,
-    regTrib
+    regTrib,
+    ibscbs
   } = payload;
 
   if (!cLocEmi) throw new Error('cLocEmi é obrigatório');
@@ -288,9 +293,7 @@ export function buildDpsXml(payload) {
 
   const dpsId = 'DPS' + buildDpsKey({
     cMun: cLocEmi,
-    dCompet: dCompet || dhEmi,
     documentEmitter: prestador.document,
-    tpEmit,
     serie,
     nDPS
   });
@@ -313,6 +316,7 @@ export function buildDpsXml(payload) {
   buildIntermediario(infDPS, intermediario);
   buildServico(infDPS, servico);
   buildValores(infDPS, valores);
+  buildIbsCbs(infDPS, ibscbs);
 
   const xml = root.end({ prettyPrint: false, headless: false });
   return { xml, dpsId };
@@ -351,6 +355,7 @@ export default {
   buildDpsXml,
   buildDpsKey,
   buildLoteDps,
+  IBSCBS_DEFAULTS,
   computeValues,
   NFSE_NAMESPACE,
   NFSE_VERSION

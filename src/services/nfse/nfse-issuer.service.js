@@ -187,7 +187,8 @@ class NfseIssuerService {
       cNBS,
       xDescServ,
       cLocPrestacao,
-      cPaisPrestacao: input.cPaisPrestacao || '1058'
+      // ISO alfa-2 (ex.: 'BR'); só usado quando não há cLocPrestacao
+      cPaisPrestacao: input.cPaisPrestacao || null
     };
 
     const pAliq = input.pAliq != null ? Number(input.pAliq) : Number(serviceCode?.aliqISSQN || 0);
@@ -264,7 +265,8 @@ class NfseIssuerService {
         tomador,
         servico,
         valores,
-        regTrib
+        regTrib,
+        ibscbs: { ...(config.ibscbs?.toObject?.() ?? config.ibscbs ?? {}), ...(input.ibscbs || {}) }
       });
 
       // 9. Carregar certificado e assinar
@@ -525,7 +527,8 @@ class NfseIssuerService {
       tomador,
       servico,
       valores,
-      regTrib
+      regTrib,
+      ibscbs:   config.ibscbs?.toObject?.() ?? config.ibscbs
     });
 
     const cert = certificateService.loadStoredCertificate(config.certificate);
