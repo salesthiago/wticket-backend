@@ -51,12 +51,26 @@ const ServiceOrderSchema = new mongoose.Schema({
     index: true
   },
 
-  // Cliente
+  // Cliente — obrigatório, exceto em orçamentos de lead (leadId), em que o
+  // cliente só é criado quando o orçamento é aprovado (ver services/lead.service.js).
   customerId: {
     type: mongoose.Schema.Types.ObjectId,
     ref: 'Customer',
-    required: true,
     index: true
+  },
+
+  // Lead de origem (orçamento solicitado por um lead ainda não convertido)
+  leadId: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'Lead',
+    index: true
+  },
+
+  // Origem da OS: criada na plataforma ou recebida pela API de integração
+  source: {
+    type: String,
+    enum: ['manual', 'api'],
+    default: 'manual'
   },
 
   // Veículo (oficina) — referência opcional ao veículo do cliente
@@ -68,7 +82,7 @@ const ServiceOrderSchema = new mongoose.Schema({
 
   // Equipamento (na oficina: o automóvel)
   equipment: {
-    type: { type: String, required: true, trim: true },       // ex: Notebook, Celular | oficina: 'automovel'
+    type: { type: String, trim: true },                       // ex: Notebook, Celular | oficina: 'automovel'
     brand: { type: String, trim: true },                       // ex: Dell | oficina: marca do veículo
     model: { type: String, trim: true },                       // ex: Inspiron 15 | oficina: modelo do veículo
     plate: { type: String, trim: true, uppercase: true },      // Placa (oficina)
@@ -198,6 +212,19 @@ ServiceOrderSchema.index({ companyId: 1, customerId: 1, status: 1 });
 ServiceOrderSchema.index({ companyId: 1, technicianId: 1, status: 1 });
 ServiceOrderSchema.index({ companyId: 1, orderNumber: 1 }, { unique: true, sparse: true });
 ServiceOrderSchema.index({ 'equipment.serialNumber': 1 }, { sparse: true });
+
+// Toda OS precisa de um cliente ou de um lead. O tipo do equipamento só é
+// exigido para OS de cliente — o orçamento de um lead pode chegar só com a
+// descrição do problema.
+ServiceOrderSchema.pre('validate', function (next) {
+  if (!this.customerId && !this.leadId) {
+    this.invalidate('customerId', 'customerId or leadId is required');
+  }
+  if (!this.leadId && !this.equipment?.type) {
+    this.invalidate('equipment.type', 'equipment.type is required');
+  }
+  next();
+});
 
 // Gerar numero sequencial da OS antes de salvar (sequencia por empresa)
 ServiceOrderSchema.pre('save', async function (next) {

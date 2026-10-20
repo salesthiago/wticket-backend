@@ -1,6 +1,7 @@
 import logger from '../utils/logger.js';
 import leadRepository from '../repositories/lead.repository.js';
-import customerRepository from '../repositories/customer.repository.js';
+import serviceOrderRepository from '../repositories/service-order.repository.js';
+import leadService from '../services/lead.service.js';
 
 export const findAll = async (req, res) => {
   try {
@@ -39,7 +40,7 @@ export const findById = async (req, res) => {
 export const create = async (req, res) => {
   try {
     const companyId = req.user.companyId;
-    const { name, phone, email, documentType, document, address, notes } = req.body;
+    const { name, phone, email, documentType, document, address, notes, description } = req.body;
 
     if (!name) return res.status(422).json({ message: 'Field name is required' });
 
@@ -51,7 +52,9 @@ export const create = async (req, res) => {
       documentType,
       document,
       address,
-      notes
+      notes,
+      description,
+      source: 'manual'
     });
 
     return res.status(201).json(lead);
@@ -70,6 +73,13 @@ export const update = async (req, res) => {
     if (!body || Object.keys(body).length === 0) {
       return res.status(422).json({ message: 'Body is empty' });
     }
+
+    // Conversão só pelo fluxo próprio (convert / aprovação do orçamento).
+    delete body.convertedTo;
+    delete body.convertedAt;
+    delete body.source;
+    delete body.externalId;
+    if (body.status === 'converted') delete body.status;
 
     const lead = await leadRepository.update(companyId, id, body);
     if (!lead) return res.status(404).json({ message: 'Lead not found' });
@@ -93,30 +103,29 @@ export const convertToCustomer = async (req, res) => {
       return res.status(409).json({ message: 'Lead already converted to customer' });
     }
 
-    if (lead.document) {
-      const existing = await customerRepository.findByDocument(companyId, lead.document);
-      if (existing) {
-        return res.status(409).json({ message: 'A customer with this document already exists' });
-      }
-    }
+    const { customer, created } = await leadService.convertToCustomer(companyId, id);
 
-    const customer = await customerRepository.create({
-      companyId,
-      name: lead.name,
-      phone: lead.phone,
-      email: lead.email,
-      documentType: lead.documentType,
-      document: lead.document,
-      address: lead.address,
-      source: 'lead',
-      leadId: lead._id
+    return res.status(created ? 201 : 200).json({
+      customer,
+      message: created
+        ? 'Lead successfully converted to customer'
+        : 'Lead linked to an existing customer with the same document/phone'
     });
-
-    await leadRepository.convertToCustomer(companyId, id, customer._id);
-
-    return res.status(201).json({ customer, message: 'Lead successfully converted to customer' });
   } catch (err) {
     logger.error('LeadController :: convertToCustomer >> ', err);
+    return res.status(err.status || 500).json({ message: err.status ? err.message : 'Internal server error' });
+  }
+};
+
+export const findServiceOrders = async (req, res) => {
+  try {
+    const companyId = req.user.companyId;
+    const { id } = req.params;
+
+    const orders = await serviceOrderRepository.findByLead(companyId, id);
+    return res.status(200).json(orders);
+  } catch (err) {
+    logger.error('LeadController :: findServiceOrders >> ', err);
     return res.status(500).json({ message: 'Internal server error' });
   }
 };

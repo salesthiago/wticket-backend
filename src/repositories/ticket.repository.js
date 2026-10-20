@@ -177,6 +177,30 @@ class TicketRepository {
     }
   }
 
+  async addAttachment(id, attachment) {
+    try {
+      return await Ticket.findByIdAndUpdate(
+        id,
+        { $push: { attachments: attachment } },
+        { new: true }
+      );
+    } catch (error) {
+      throw new Error('Erro ao adicionar anexo: ' + error.message);
+    }
+  }
+
+  async removeAttachment(id, attachmentId) {
+    try {
+      return await Ticket.findByIdAndUpdate(
+        id,
+        { $pull: { attachments: { _id: attachmentId } } },
+        { new: true }
+      );
+    } catch (error) {
+      throw new Error('Erro ao remover anexo: ' + error.message);
+    }
+  }
+
   async getTicketsStats() {
     try {
       const match = { sessionName };

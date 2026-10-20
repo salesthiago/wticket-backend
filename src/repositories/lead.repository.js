@@ -41,6 +41,18 @@ class LeadRepository {
       .populate('convertedTo', 'name email phone');
   }
 
+  async findByExternalId(companyId, externalId) {
+    if (!companyId) throw new Error('companyId is required');
+    return await Lead.findOne({ companyId, externalId, isActive: true });
+  }
+
+  // Lead ativo mais recente com o telefone (ignora os marcados como perdidos).
+  async findReusableByPhone(companyId, phone) {
+    if (!companyId) throw new Error('companyId is required');
+    return await Lead.findOne({ companyId, phone, isActive: true, status: { $ne: 'lost' } })
+      .sort({ createdAt: -1 });
+  }
+
   async update(companyId, id, data) {
     if (!companyId) throw new Error('companyId is required');
     const patch = { ...data };

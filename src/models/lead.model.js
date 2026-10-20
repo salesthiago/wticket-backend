@@ -59,6 +59,23 @@ const LeadSchema = new mongoose.Schema({
     type: String,
     trim: true
   },
+  // Problema descrito pelo próprio lead (ex.: formulário do site via API).
+  description: {
+    type: String,
+    trim: true
+  },
+  // Origem do lead: cadastro manual na plataforma ou integração via API.
+  source: {
+    type: String,
+    enum: ['manual', 'api'],
+    default: 'manual',
+    index: true
+  },
+  // Identificador do lead no sistema de origem (idempotência da API).
+  externalId: {
+    type: String,
+    trim: true
+  },
   convertedTo: {
     type: mongoose.Schema.Types.ObjectId,
     ref: 'Customer',
@@ -82,5 +99,9 @@ const LeadSchema = new mongoose.Schema({
 });
 
 LeadSchema.index({ companyId: 1, isActive: 1, status: 1, createdAt: -1 });
+LeadSchema.index(
+  { companyId: 1, externalId: 1 },
+  { unique: true, partialFilterExpression: { externalId: { $type: 'string' } } }
+);
 
 export default mongoose.model('Lead', LeadSchema);

@@ -132,6 +132,9 @@ export const issueFromServiceOrder = async (req, res) => {
 
     const so = await serviceOrderRepository.findById(companyId, serviceOrderId);
     if (!so) return res.status(404).json({ message: 'Ordem de serviço não encontrada' });
+    if (!so.customerId && !overrides.customerId) {
+      return res.status(422).json({ message: 'Orçamento de lead: aprove a OS (o lead vira cliente) antes de emitir a NFS-e.' });
+    }
 
     // Soma serviços + peças para compor o vServ default
     const servicesTotal = (so.services || []).reduce((acc, s) => acc + Number(s.total || 0), 0);

@@ -1,4 +1,7 @@
+import fs from "fs";
+import path from "path";
 import logger from "../utils/logger.js";
+import * as s3Service from "../services/storage/s3.service.js";
 import ticketRepository from "../repositories/ticket.repository.js";
 import ticketStatusRepository from "../repositories/ticket-status.repository.js";
 import customerRepository from "../repositories/customer.repository.js";
@@ -322,6 +325,191 @@ export const deleteResponse = async (req, res) => {
     return res.status(200).json(updated);
   } catch (err) {
     logger.error('ticket deleteResponse error', err);
+    return res.status(500).json({ message: 'Internal server error' });
+  }
+};
+
+// Edição do conteúdo do ticket (categoria, assunto, prioridade, observações):
+// liberada apenas enquanto o ticket não tiver nenhuma resposta, para não
+// alterar o contexto de uma tratativa já iniciada.
+export const updateContent = async (req, res) => {
+  try {
+    const companyId = req.user.companyId;
+    const { id } = req.params;
+    if (!id) return res.status(422).json({ message: "ID not found" });
+
+    const ticket = await ticketRepository.findById(id, { companyId });
+    if (!ticket || !ticketBelongsToScope(ticket, req.user?.customerId)) {
+      return res.status(404).json({ message: "Ticket not found" });
+    }
+    if (ticket.responses?.length > 0) {
+      return res.status(409).json({ message: "O ticket já possui respostas e não pode mais ser editado" });
+    }
+
+    const { categoryId, subjectId, priority, notes } = req.body || {};
+    const patch = {};
+    if (categoryId !== undefined) patch.categoryId = categoryId || null;
+    if (subjectId !== undefined) patch.subjectId = subjectId || null;
+    if (priority !== undefined) patch.priority = priority;
+    if (notes !== undefined) patch.notes = notes;
+
+    await ticketRepository.update(id, patch);
+    const updated = await ticketRepository.findById(id, { companyId });
+    return res.status(200).json(updated);
+  } catch (err) {
+    logger.error("ticket updateContent error", err);
+    return res.status(500).json({ message: "Internal server error" });
+  }
+};
+
+// ─── Anexos do Ticket ───────────────────────────────────────────────────────
+
+// Armazena o arquivo no S3 da empresa (quando configurado) ou no disco local
+// — mesmo padrão usado nos documentos de Projeto.
+const storeTicketAttachment = async ({ companyId, ticketId, file, req, uploadedBy }) => {
+  const ts = Date.now();
+  const rand = Math.round(Math.random() * 1e9);
+  const ext = (file.originalname.match(/\.([A-Za-z0-9]+)$/)?.[1] || 'dat').toLowerCase();
+  const objectName = `${ts}-${rand}.${ext}`;
+
+  const useS3 = await s3Service.hasConfig(companyId);
+  if (useS3) {
+    const result = await s3Service.uploadObject({
+      companyId,
+      category: `tickets/${ticketId}/attachments`,
+      filename: objectName,
+      body: file.buffer,
+      contentType: file.mimetype
+    });
+    return {
+      url: result.url,
+      storageKey: result.key,
+      storageBucket: result.bucket,
+      storageSource: result.source,
+      filename: file.originalname,
+      mimetype: file.mimetype,
+      size: file.size,
+      uploadedBy
+    };
+  }
+
+  // Fallback local: grava em uploads/tickets/<id>/attachments e serve por /uploads.
+  const dir = path.join('uploads', 'tickets', String(ticketId), 'attachments');
+  fs.mkdirSync(dir, { recursive: true });
+  fs.writeFileSync(path.join(dir, objectName), file.buffer);
+  const baseUrl = process.env.API_URL || `${req.protocol}://${req.get('host')}`;
+  return {
+    url: `${baseUrl}/uploads/tickets/${ticketId}/attachments/${objectName}`,
+    storageSource: 'local',
+    filename: file.originalname,
+    mimetype: file.mimetype,
+    size: file.size,
+    uploadedBy
+  };
+};
+
+const ATTACHMENT_VIEW_EXPIRES_IN = 15 * 60; // 15 min
+
+// URL de exibição: assinada (temporária) para objetos privados no S3, ou a
+// URL já persistida para arquivos locais.
+const enrichAttachments = async (companyId, attachments = []) => {
+  return await Promise.all(
+    attachments.map(async (a) => {
+      const obj = a.toObject ? a.toObject() : { ...a };
+      try {
+        obj.viewUrl = obj.storageKey && (obj.storageSource === 'company' || obj.storageSource === 'default')
+          ? await s3Service.getPresignedUrl({ companyId, key: obj.storageKey, expiresIn: ATTACHMENT_VIEW_EXPIRES_IN })
+          : obj.url || null;
+      } catch (err) {
+        logger.warn('ticket enrichAttachments sign failed >>>', err?.message);
+        obj.viewUrl = obj.url || null;
+      }
+      return obj;
+    })
+  );
+};
+
+export const getAttachments = async (req, res) => {
+  try {
+    const companyId = req.user.companyId ?? null;
+    const { id } = req.params;
+
+    const ticket = await ticketRepository.findById(id, { companyId });
+    if (!ticket || !ticketBelongsToScope(ticket, req.user?.customerId)) {
+      return res.status(404).json({ message: 'Ticket not found' });
+    }
+
+    return res.status(200).json(await enrichAttachments(companyId, ticket.attachments || []));
+  } catch (err) {
+    logger.error('ticket getAttachments error >>>', err);
+    return res.status(500).json({ message: 'Internal server error' });
+  }
+};
+
+export const addAttachment = async (req, res) => {
+  try {
+    const companyId = req.user.companyId ?? null;
+    const { id } = req.params;
+
+    if (!req.file) return res.status(422).json({ message: 'Arquivo é obrigatório' });
+
+    const ticket = await ticketRepository.findById(id, { companyId });
+    if (!ticket || !ticketBelongsToScope(ticket, req.user?.customerId)) {
+      return res.status(404).json({ message: 'Ticket not found' });
+    }
+
+    let attachment;
+    try {
+      attachment = await storeTicketAttachment({
+        companyId, ticketId: id, file: req.file, req, uploadedBy: req.user?.sub || null
+      });
+    } catch (uploadErr) {
+      logger.error('ticket addAttachment upload error >>>', uploadErr);
+      return res.status(500).json({ message: uploadErr?.message || 'Falha ao enviar anexo' });
+    }
+
+    const updated = await ticketRepository.addAttachment(id, attachment);
+    return res.status(201).json(await enrichAttachments(companyId, updated.attachments || []));
+  } catch (err) {
+    logger.error('ticket addAttachment error >>>', err);
+    return res.status(500).json({ message: 'Internal server error' });
+  }
+};
+
+// Remover anexo: quem enviou ou um administrador (mesma regra das respostas).
+export const deleteAttachment = async (req, res) => {
+  try {
+    const companyId = req.user.companyId ?? null;
+    const { id, attachmentId } = req.params;
+
+    const ticket = await ticketRepository.findById(id, { companyId });
+    if (!ticket || !ticketBelongsToScope(ticket, req.user?.customerId)) {
+      return res.status(404).json({ message: 'Ticket not found' });
+    }
+
+    const attachment = ticket.attachments.id(attachmentId);
+    if (!attachment) return res.status(404).json({ message: 'Anexo não encontrado' });
+
+    if (!canDelete(attachment.uploadedBy, req)) {
+      return res.status(403).json({ message: 'Somente quem enviou o anexo ou um administrador pode excluí-lo' });
+    }
+
+    // Best-effort: remove o arquivo do armazenamento (não bloqueia a remoção do registro).
+    try {
+      if (attachment.storageKey && (attachment.storageSource === 'company' || attachment.storageSource === 'default')) {
+        await s3Service.deleteObject({ companyId, key: attachment.storageKey });
+      } else if (attachment.storageSource === 'local' && attachment.url) {
+        const relative = attachment.url.split('/uploads/')[1];
+        if (relative) fs.rmSync(path.join('uploads', relative), { force: true });
+      }
+    } catch (storageErr) {
+      logger.warn('ticket deleteAttachment storage delete failed >>>', storageErr?.message);
+    }
+
+    const updated = await ticketRepository.removeAttachment(id, attachmentId);
+    return res.status(200).json(await enrichAttachments(companyId, updated?.attachments || []));
+  } catch (err) {
+    logger.error('ticket deleteAttachment error >>>', err);
     return res.status(500).json({ message: 'Internal server error' });
   }
 };

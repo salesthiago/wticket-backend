@@ -14,7 +14,7 @@ class ServiceOrderRepository {
     }
   }
 
-  async findAll(companyId, { search, status, priority, technicianId, customerId, page = 0, limit = 10 } = {}) {
+  async findAll(companyId, { search, status, priority, technicianId, customerId, leadId, page = 0, limit = 10 } = {}) {
     if (!companyId) throw new Error('companyId is required');
     try {
       const query = { companyId, isActive: true };
@@ -23,6 +23,7 @@ class ServiceOrderRepository {
       if (priority) query.priority = priority;
       if (technicianId) query.technicianId = technicianId;
       if (customerId) query.customerId = customerId;
+      if (leadId) query.leadId = leadId;
 
       if (search) {
         query.$or = [
@@ -39,6 +40,7 @@ class ServiceOrderRepository {
       const [records, total] = await Promise.all([
         ServiceOrder.find(query)
           .populate('customerId', 'name phone email document')
+          .populate('leadId', 'name phone email status')
           .populate('vehicleId', 'plate brand model')
           .populate('technicianId', 'name email')
           .sort({ createdAt: -1 })
@@ -59,6 +61,7 @@ class ServiceOrderRepository {
     if (!companyId) throw new Error('companyId is required');
     return await ServiceOrder.findOne({ _id: id, companyId, isActive: true })
       .populate('customerId', 'name phone email document address')
+      .populate('leadId', 'name phone email document address status description')
       .populate('technicianId', 'name email')
       .populate('statusHistory.changedBy', 'name');
   }
@@ -88,8 +91,25 @@ class ServiceOrderRepository {
       { new: true }
     )
       .populate('customerId', 'name phone email document address')
+      .populate('leadId', 'name phone email document address status description')
       .populate('vehicleId', 'plate brand model year color fuel mileage')
       .populate('technicianId', 'name email');
+  }
+
+  // Liga ao cliente as OS que estavam no nome do lead (após a conversão).
+  async assignCustomerFromLead(companyId, leadId, customerId) {
+    if (!companyId) throw new Error('companyId is required');
+    return await ServiceOrder.updateMany(
+      { companyId, leadId, customerId: null },
+      { $set: { customerId } }
+    );
+  }
+
+  async findByLead(companyId, leadId) {
+    if (!companyId) throw new Error('companyId is required');
+    return await ServiceOrder.find({ companyId, leadId, isActive: true })
+      .populate('technicianId', 'name email')
+      .sort({ createdAt: -1 });
   }
 
   async addStatusHistory(companyId, id, statusEntry) {

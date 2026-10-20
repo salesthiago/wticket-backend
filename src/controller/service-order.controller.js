@@ -4,6 +4,8 @@ import sharp from 'sharp';
 import logger from '../utils/logger.js';
 import serviceOrderRepository from '../repositories/service-order.repository.js';
 import customerRepository from '../repositories/customer.repository.js';
+import leadRepository from '../repositories/lead.repository.js';
+import leadService from '../services/lead.service.js';
 import vehicleRepository from '../repositories/vehicle.repository.js';
 import companyRepository from '../repositories/company.repository.js';
 import receivableService from '../services/financial/receivable.service.js';
@@ -28,7 +30,7 @@ const syncVehicleMileage = async (companyId, vehicleId, mileage) => {
 export const findAll = async (req, res) => {
   try {
     const companyId = req.user.companyId;
-    const { search, status, priority, technicianId, customerId, page, limit } = req.query;
+    const { search, status, priority, technicianId, customerId, leadId, page, limit } = req.query;
 
     const result = await serviceOrderRepository.findAll(companyId, {
       search,
@@ -36,6 +38,7 @@ export const findAll = async (req, res) => {
       priority,
       technicianId,
       customerId,
+      leadId,
       page: page ? parseInt(page) - 1 : 0,
       limit: limit ? parseInt(limit) : 10
     });
@@ -93,20 +96,41 @@ export const findByCustomer = async (req, res) => {
 export const create = async (req, res) => {
   try {
     const companyId = req.user.companyId;
-    const { customerId, vehicleId, equipment, reportedIssue, priority, technicianId, estimatedCompletionDate, internalNotes } = req.body;
+    const { customerId, leadId, vehicleId, equipment, reportedIssue, priority, technicianId, estimatedCompletionDate, internalNotes } = req.body;
 
-    if (!customerId || !equipment?.type || !reportedIssue) {
+    // OS de cliente exige o equipamento; orçamento de lead (leadId) não — o
+    // lead só vira cliente quando o orçamento for aprovado (ver updateStatus).
+    if (!customerId && !leadId) {
+      return res.status(422).json({ message: 'Field customerId or leadId is required' });
+    }
+    if (!reportedIssue || (customerId && !equipment?.type)) {
       return res.status(422).json({
-        message: 'Fields customerId, equipment.type and reportedIssue are required'
+        message: customerId
+          ? 'Fields customerId, equipment.type and reportedIssue are required'
+          : 'Fields leadId and reportedIssue are required'
       });
     }
 
-    const customer = await customerRepository.findById(companyId, customerId);
-    if (!customer) return res.status(404).json({ message: 'Customer not found' });
+    let resolvedCustomerId = customerId || undefined;
+    let resolvedLeadId;
+    if (customerId) {
+      const customer = await customerRepository.findById(companyId, customerId);
+      if (!customer) return res.status(404).json({ message: 'Customer not found' });
+    } else {
+      const lead = await leadRepository.findById(companyId, leadId);
+      if (!lead) return res.status(404).json({ message: 'Lead not found' });
+      if (lead.status === 'lost') return res.status(422).json({ message: 'Lead is marked as lost' });
+      resolvedLeadId = lead._id;
+      // Lead já convertido: a OS vai direto para o cliente vinculado.
+      if (lead.status === 'converted' && lead.convertedTo) {
+        resolvedCustomerId = lead.convertedTo._id || lead.convertedTo;
+      }
+    }
 
     const serviceOrder = await serviceOrderRepository.create({
       companyId,
-      customerId,
+      customerId: resolvedCustomerId,
+      leadId: resolvedLeadId,
       vehicleId: vehicleId || undefined,
       equipment,
       reportedIssue,
@@ -144,6 +168,10 @@ export const update = async (req, res) => {
     delete body.status;
     delete body.statusHistory;
     delete body.orderNumber;
+    // O vínculo com o lead e a troca para cliente são feitos só pela aprovação.
+    delete body.leadId;
+    delete body.source;
+    if (!body.customerId) delete body.customerId;
 
     const serviceOrder = await serviceOrderRepository.update(companyId, id, body);
     if (!serviceOrder) return res.status(404).json({ message: 'Service order not found' });
@@ -175,6 +203,13 @@ export const updateStatus = async (req, res) => {
     if (!serviceOrder) return res.status(404).json({ message: 'Service order not found' });
 
     const updateData = { status };
+
+    // Orçamento aprovado de um lead: o lead vira cliente e a OS passa a ser dele.
+    if (status === 'approved' && serviceOrder.leadId && !serviceOrder.customerId) {
+      const leadId = serviceOrder.leadId._id || serviceOrder.leadId;
+      const { customer } = await leadService.convertToCustomer(companyId, leadId);
+      updateData.customerId = customer._id;
+    }
 
     if (status === 'completed') {
       updateData.completedAt = new Date();
@@ -218,7 +253,7 @@ export const updateStatus = async (req, res) => {
     return res.status(200).json(updated);
   } catch (err) {
     logger.error('ServiceOrderController :: updateStatus >> ', err);
-    return res.status(500).json({ message: 'Internal server error' });
+    return res.status(err.status || 500).json({ message: err.status ? err.message : 'Internal server error' });
   }
 };
 
@@ -308,6 +343,11 @@ export const invoice = async (req, res) => {
     const modules = req.user.modules || [];
     if (!modules.includes('financial')) {
       return res.status(403).json({ message: 'Módulo financeiro não está ativo para esta empresa.' });
+    }
+
+    const so = await serviceOrderRepository.findById(companyId, id);
+    if (so && !so.customerId && !req.body?.customerId) {
+      return res.status(422).json({ message: 'Orçamento de lead: aprove a OS (o lead vira cliente) antes de faturar.' });
     }
 
     const doc = await receivableService.invoiceFromServiceOrder({
@@ -413,8 +453,12 @@ export const exportPdf = async (req, res) => {
       })
     )).filter(Boolean);
 
+    // Orçamento de lead ainda não convertido: imprime os dados do lead no lugar do cliente.
+    const orderObj = order.toObject ? order.toObject() : order;
+    if (!orderObj.customerId && orderObj.leadId) orderObj.customerId = orderObj.leadId;
+
     const buffer = await buildServiceOrderPdf({
-      order: order.toObject ? order.toObject() : order,
+      order: orderObj,
       company: company ? (company.toObject ? company.toObject() : company) : null,
       logo: logoBuffer,
       photos: photoImages
@@ -434,7 +478,8 @@ export const exportPdf = async (req, res) => {
 // ─── Fotos da OS ────────────────────────────────────────────────────────────────
 
 // Armazena o arquivo no S3 da empresa (quando configurado) ou no disco local.
-const storeOsPhoto = async ({ companyId, serviceOrderId, file, req }) => {
+// Exportado para a API de integração (fotos enviadas junto com o orçamento).
+export const storeOsPhoto = async ({ companyId, serviceOrderId, file, req }) => {
   const ts = Date.now();
   const rand = Math.round(Math.random() * 1e9);
   const ext = (file.originalname.match(/\.([A-Za-z0-9]+)$/)?.[1] || 'jpg').toLowerCase();

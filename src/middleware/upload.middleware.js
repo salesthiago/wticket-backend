@@ -43,6 +43,29 @@ export const uploadServiceOrderPhoto = (req, res, next) => {
   });
 };
 
+// ─── Fotos enviadas pela API de integração (orçamento do lead) ─────────────────
+const MAX_INTEGRATION_PHOTOS = 10;
+const MAX_INTEGRATION_PHOTO_SIZE = 10 * 1024 * 1024; // 10MB
+
+const integrationPhotosUpload = multer({
+  storage: multer.memoryStorage(),
+  fileFilter,
+  limits: { fileSize: MAX_INTEGRATION_PHOTO_SIZE, files: MAX_INTEGRATION_PHOTOS }
+}).array('photos', MAX_INTEGRATION_PHOTOS);
+
+export const uploadIntegrationPhotos = (req, res, next) => {
+  integrationPhotosUpload(req, res, (err) => {
+    if (!err) return next();
+    if (err instanceof multer.MulterError && err.code === 'LIMIT_FILE_SIZE') {
+      return res.status(413).json({ message: 'Each photo must be at most 10MB.' });
+    }
+    if (err instanceof multer.MulterError && ['LIMIT_FILE_COUNT', 'LIMIT_UNEXPECTED_FILE'].includes(err.code)) {
+      return res.status(400).json({ message: `Send at most ${MAX_INTEGRATION_PHOTOS} photos in the "photos" field.` });
+    }
+    return res.status(400).json({ message: err.message || 'Failed to process photo upload.' });
+  });
+};
+
 // ─── Documentos do Projeto ─────────────────────────────────────────────────────
 // Memória: o controller decide entre S3 e disco local. Aceita tipos de
 // documento comuns (não só imagens, como nas fotos de OS).
@@ -84,6 +107,37 @@ export const uploadProjectDocument = (req, res, next) => {
       });
     }
     return res.status(400).json({ message: err.message || 'Falha ao processar o upload do documento.' });
+  });
+};
+
+// ─── Anexos do Ticket ──────────────────────────────────────────────────────────
+// Somente PDF e imagens. Memória: o controller decide entre S3 e disco local.
+const ticketAttachmentFileFilter = (req, file, cb) => {
+  const allowed = ['application/pdf', 'image/jpeg', 'image/png', 'image/webp', 'image/gif'];
+  if (allowed.includes(file.mimetype)) {
+    cb(null, true);
+  } else {
+    cb(new Error('Tipo de arquivo não permitido. Envie um PDF ou uma imagem (JPEG, PNG, WEBP ou GIF).'), false);
+  }
+};
+
+const MAX_TICKET_ATTACHMENT_SIZE = 20 * 1024 * 1024; // 20MB
+
+const ticketAttachmentUpload = multer({
+  storage: multer.memoryStorage(),
+  fileFilter: ticketAttachmentFileFilter,
+  limits: { fileSize: MAX_TICKET_ATTACHMENT_SIZE }
+}).single('file');
+
+export const uploadTicketAttachment = (req, res, next) => {
+  ticketAttachmentUpload(req, res, (err) => {
+    if (!err) return next();
+    if (err instanceof multer.MulterError && err.code === 'LIMIT_FILE_SIZE') {
+      return res.status(413).json({
+        message: 'O anexo excede o tamanho máximo permitido de 20MB.'
+      });
+    }
+    return res.status(400).json({ message: err.message || 'Falha ao processar o upload do anexo.' });
   });
 };
 

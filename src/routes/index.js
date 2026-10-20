@@ -36,6 +36,8 @@ import billingRoutes from './billing.routes.js'
 import planRoutes from './plan.routes.js'
 import dashboardRoutes from './dashboard.routes.js'
 import emailConfigRoutes from './email-config.routes.js'
+import integrationRoutes from './integration.routes.js'
+import apiKeyRoutes from './api-key.routes.js'
 import swaggerUi from 'swagger-ui-express'
 //import swaggerFile from './swagger.json'
 
@@ -57,6 +59,9 @@ router.post('/billing/webhook/itau', paymentController.itauWebhook);
 // Webhook da Integração Itaú por empresa (Contas a Receber) — autentica-se
 // sozinho via HMAC (header x-itau-signature) contra o webhookSecret da empresa.
 router.post('/financial/itau/webhook/:companyId', itauFinancialWebhookController.handle);
+// API de integração por empresa (ex.: site enviando leads/orçamentos) —
+// autentica-se sozinha pela chave de API (header x-api-key), sem JWT.
+router.use('/integrations', integrationRoutes);
 
 // A partir daqui todo mundo passa por authenticate. Logins de cliente (com
 // customerId vinculado — ver models/user.model.js) só podem prosseguir além
@@ -101,6 +106,7 @@ router.use('/financial', financialRoutes);
 router.use('/billing', billingRoutes);
 router.use('/dashboard', dashboardRoutes);
 router.use('/email-config', emailConfigRoutes);
+router.use('/api-keys', apiKeyRoutes);
 //router.use('/docs', swaggerUi.serve, swaggerUi.setup(swaggerFile));
 
 export default router

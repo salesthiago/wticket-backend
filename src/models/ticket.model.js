@@ -1,5 +1,19 @@
 import mongoose from 'mongoose';
 
+// Anexo do ticket (PDF ou imagem). Armazenado no S3 da empresa quando
+// configurado, com fallback para disco local (/uploads) — mesmo padrão dos
+// documentos de Projeto.
+const TicketAttachmentSchema = new mongoose.Schema({
+  url: { type: String, required: true, trim: true },
+  storageKey: { type: String, trim: true },
+  storageBucket: { type: String, trim: true },
+  storageSource: { type: String, enum: ['company', 'default', 'local'], default: 'local' },
+  filename: { type: String, trim: true },
+  mimetype: { type: String, trim: true },
+  size: { type: Number },
+  uploadedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User' }
+}, { timestamps: true });
+
 const TicketSchema = new mongoose.Schema({
   companyId: {
     type: mongoose.Schema.Types.ObjectId,
@@ -137,6 +151,8 @@ const TicketSchema = new mongoose.Schema({
   notes: {
     type: String
   },
+  // Arquivos anexados ao ticket (PDF/imagens)
+  attachments: [TicketAttachmentSchema],
   saleItems: [{
     product: { type: mongoose.Schema.Types.ObjectId, ref: 'Product' },
     productName: { type: String },
