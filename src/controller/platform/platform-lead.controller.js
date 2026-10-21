@@ -20,7 +20,9 @@ function resolveStatus(value) {
 }
 
 // Valida e normaliza o payload de um lead. Devolve { data } ou { error }.
-function parseLead(body = {}, { partial = false } = {}) {
+// `lenientEmail` (importação): e-mail em formato inválido é descartado em vez
+// de reprovar a linha — listas do Google Maps nem sempre trazem e-mail válido.
+function parseLead(body = {}, { partial = false, lenientEmail = false } = {}) {
   const data = {};
   const has = (k) => body[k] !== undefined;
 
@@ -34,7 +36,10 @@ function parseLead(body = {}, { partial = false } = {}) {
   }
   if (!partial || has('email')) {
     data.email = clean(body.email).toLowerCase();
-    if (data.email && !isEmail(data.email)) return { error: `E-mail inválido: ${data.email}` };
+    if (data.email && !isEmail(data.email)) {
+      if (!lenientEmail) return { error: `E-mail inválido: ${data.email}` };
+      data.email = '';
+    }
   }
   if (!partial || has('status')) {
     const status = resolveStatus(body.status);
@@ -148,7 +153,7 @@ export const importRows = async (req, res) => {
     rows.forEach((row, i) => {
       // `line` vem do front (linha real no arquivo, contando o cabeçalho).
       const line = Number(row?.line) || i + 2;
-      const { data, error } = parseLead(row);
+      const { data, error } = parseLead(row, { lenientEmail: true });
       if (error) errors.push({ line, message: error });
       else valid.push({ line, data });
     });
