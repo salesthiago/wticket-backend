@@ -37,14 +37,18 @@ const PaymentSchema = new mongoose.Schema({
   },
   // Plano que originou a cobrança (quando paga por plano, não por módulos avulsos).
   planId: { type: mongoose.Schema.Types.ObjectId, ref: 'Plan' },
-  provider: { type: String, enum: ['abacatepay', 'itau', 'stripe'], default: 'abacatepay', index: true },
+  // 'manual' = cobrança lançada pelo super_admin no painel da plataforma, recebida
+  // fora dos provedores (transferência, boleto avulso...) e baixada manualmente.
+  provider: { type: String, enum: ['abacatepay', 'itau', 'stripe', 'manual'], default: 'abacatepay', index: true },
   // ID da cobrança no provedor (ex.: bill_xxxx). Único quando preenchido
   // (índice unique+sparse declarado abaixo via schema.index).
   providerBillingId: { type: String },
   // Assinatura recorrente no AbacatePay (subs_...). Renovações chegam por este id.
   abacateSubscriptionId: { type: String, trim: true, index: true },
   abacateCustomerId: { type: String, trim: true },
-  kind: { type: String, enum: ['billing', 'pixQrCode', 'subscription'], default: 'billing' },
+  kind: { type: String, enum: ['billing', 'pixQrCode', 'subscription', 'manual'], default: 'billing' },
+  description: { type: String, trim: true },
+  dueDate: { type: Date },
   // Valor total em BRL (reais), já convertido dos centavos do provedor.
   amount: { type: Number, default: 0, min: 0 },
   // Códigos dos módulos que esta cobrança libera ao ser paga.
@@ -58,6 +62,14 @@ const PaymentSchema = new mongoose.Schema({
   // Preenchido quando provider === 'itau'.
   pix: { type: PixSchema, default: null },
   paidAt: { type: Date },
+  // Estorno registrado pelo super_admin. O reembolso junto ao provedor
+  // (AbacatePay/Itaú) é feito no painel do provedor — aqui fica o registro e a
+  // reversão do período de acesso concedido.
+  refundedAt: { type: Date },
+  refundReason: { type: String, trim: true },
+  refundedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
+  accessRevoked: { type: Boolean, default: false },
+  createdBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
   metadata: { type: mongoose.Schema.Types.Mixed, default: {} },
   events: { type: [WebhookEventSchema], default: [] }
 }, { timestamps: true });

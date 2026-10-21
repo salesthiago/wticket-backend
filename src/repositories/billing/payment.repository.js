@@ -35,8 +35,23 @@ class PaymentRepository {
   // Cobrança em aberto mais recente (usada pelo gate de billing e pelo job de
   // expiração de trial p/ evitar duplicar cobrança enquanto a anterior
   // seguir pendente).
+  // Cobranças manuais (painel da plataforma) não têm link/QR de pagamento, então
+  // ficam fora daqui — o checkout da empresa sempre recebe uma cobrança pagável.
   async findLatestPendingForCompany(companyId) {
-    return await Payment.findOne({ companyId, status: 'pending' }).sort({ createdAt: -1 });
+    return await Payment.findOne({ companyId, status: 'pending', provider: { $ne: 'manual' } }).sort({ createdAt: -1 });
+  }
+
+  async findAll(query = {}, { limit = 500 } = {}) {
+    return await Payment.find(query, { events: 0 })
+      .sort({ createdAt: -1 })
+      .limit(limit)
+      .populate('companyId', 'name document email')
+      .populate('planId', 'name')
+      .lean();
+  }
+
+  async aggregate(pipeline) {
+    return await Payment.aggregate(pipeline);
   }
 
   async update(id, data) {

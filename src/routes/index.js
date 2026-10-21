@@ -38,6 +38,7 @@ import dashboardRoutes from './dashboard.routes.js'
 import emailConfigRoutes from './email-config.routes.js'
 import integrationRoutes from './integration.routes.js'
 import apiKeyRoutes from './api-key.routes.js'
+import platformRoutes from './platform.routes.js'
 import swaggerUi from 'swagger-ui-express'
 //import swaggerFile from './swagger.json'
 
@@ -107,6 +108,7 @@ router.use('/billing', billingRoutes);
 router.use('/dashboard', dashboardRoutes);
 router.use('/email-config', emailConfigRoutes);
 router.use('/api-keys', apiKeyRoutes);
+router.use('/platform', platformRoutes);
 //router.use('/docs', swaggerUi.serve, swaggerUi.setup(swaggerFile));
 
 export default router
