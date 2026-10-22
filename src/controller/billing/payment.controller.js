@@ -117,6 +117,26 @@ export const webhook = async (req, res) => {
   }
 };
 
+// POST /api/billing/webhook/stripe  (público — chamado pela Stripe)
+// Valida a assinatura (stripe-signature) no provider.parseWebhook.
+export const stripeWebhook = async (req, res) => {
+  try {
+    const config = await paymentSettingsService.getConfigFor('stripe');
+    const event = registry.get('stripe').parseWebhook(req.rawBody, req.headers, req.query, config);
+    // Eventos que não mudam a cobrança: só confirma o recebimento.
+    if (event) await subscriptionService.handleProviderWebhook('stripe', event);
+    return res.status(200).json({ received: true });
+  } catch (err) {
+    const status = err?.status || 500;
+    if (status === 401) {
+      logger.warn(`Billing :: webhook Stripe rejeitado (${err.message})`);
+      return res.status(400).json({ message: 'invalid signature' });
+    }
+    logger.error('Billing :: erro ao processar webhook Stripe', err);
+    return res.status(500).json({ message: 'webhook processing failed' });
+  }
+};
+
 // POST /api/billing/webhook/itau  (público — chamado pelo Itaú)
 // Valida o HMAC no provider.parseWebhook e libera/renova a assinatura.
 export const itauWebhook = async (req, res) => {

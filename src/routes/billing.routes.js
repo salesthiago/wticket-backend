@@ -10,6 +10,7 @@ const router = Router();
 // sem JWT. Mantidos ANTES do '/:id' para não colidir com a rota de status.
 router.post('/webhook', paymentController.webhook);            // AbacatePay
 router.post('/webhook/itau', paymentController.itauWebhook);   // Itaú (billing)
+router.post('/webhook/stripe', paymentController.stripeWebhook); // Stripe (cartão)
 
 // Configuração dos provedores de pagamento (super-admin).
 router.get('/settings', authenticate, requireSuperAdmin, paymentSettingsController.get);

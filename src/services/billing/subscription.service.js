@@ -132,6 +132,9 @@ class SubscriptionService {
     if (route.providerKey === 'itau') {
       return this._createItauCheckout({ company, plan, route });
     }
+    if (route.providerKey === 'stripe') {
+      return this._createStripeCheckout({ company, plan, route, completionUrl, returnUrl });
+    }
     if (route.providerKey !== 'abacatepay') {
       throw httpError(`Provedor ${route.providerKey} ainda não implementado no billing`, 422);
     }
@@ -251,18 +254,80 @@ class SubscriptionService {
     };
   }
 
+  // ─── Checkout via Stripe (cartão) ─────────────────────────────────────────
+
+  /**
+   * Cria uma sessão de Stripe Checkout (página hospedada) com o valor do plano
+   * e persiste o Payment local. Retorna `url` para o front redirecionar, no
+   * mesmo formato do checkout AbacatePay.
+   */
+  async _createStripeCheckout({ company, plan, route, completionUrl, returnUrl }) {
+    const codes = [...plan.moduleCodes];
+    const periodDays = cycleToDays(plan.cycle);
+    await this._ensureModulesAttached(company, codes);
+
+    const charge = await registry.get('stripe').createCharge(
+      {
+        companyId: String(company._id),
+        planId: String(plan._id),
+        amount: Number(plan.price || 0),
+        method: 'credit_card',
+        periodDays,
+        moduleCodes: codes,
+        description: `Assinatura WTicket — ${plan.name}`,
+        payer: { name: company.name, email: company.email, phone: company.phone, taxId: company.document },
+        completionUrl: completionUrl || route.config.successUrl,
+        returnUrl: returnUrl || route.config.cancelUrl
+      },
+      route.config
+    );
+
+    const payment = await paymentRepository.create({
+      companyId: company._id,
+      planId: plan._id,
+      provider: 'stripe',
+      providerBillingId: charge.providerBillingId,
+      kind: 'billing',
+      amount: charge.amount,
+      moduleCodes: codes,
+      periodDays,
+      status: 'pending',
+      checkoutUrl: charge.checkoutUrl,
+      metadata: { environment: route.config?.environment }
+    });
+
+    return {
+      paymentId: payment._id,
+      provider: 'stripe',
+      url: payment.checkoutUrl,
+      amount: payment.amount,
+      status: payment.status,
+      providerBillingId: payment.providerBillingId,
+      moduleCodes: codes,
+      planId: plan._id
+    };
+  }
+
   /** Webhook do Itaú (billing). Idempotente pelo providerBillingId. */
   async handleItauWebhook(event) {
+    return this.handleProviderWebhook('itau', event);
+  }
+
+  /**
+   * Webhook normalizado de provedor ({ providerBillingId, status, raw }) —
+   * usado por Itaú e Stripe. Idempotente pelo providerBillingId.
+   */
+  async handleProviderWebhook(providerKey, event) {
     if (!event?.providerBillingId) {
-      logger.warn('Billing :: webhook Itaú sem providerBillingId');
+      logger.warn(`Billing :: webhook ${providerKey} sem providerBillingId`);
       return null;
     }
     const payment = await paymentRepository.findByProviderBillingId(event.providerBillingId);
     if (!payment) {
-      logger.warn(`Billing :: webhook Itaú para cobrança desconhecida ${event.providerBillingId}`);
+      logger.warn(`Billing :: webhook ${providerKey} para cobrança desconhecida ${event.providerBillingId}`);
       return null;
     }
-    await paymentRepository.pushEvent(payment._id, { type: `itau.${event.status}`, raw: event.raw });
+    await paymentRepository.pushEvent(payment._id, { type: `${providerKey}.${event.status}`, raw: event.raw });
 
     if (event.status !== 'paid') {
       if (payment.status === 'pending') {
@@ -278,7 +343,7 @@ class SubscriptionService {
     const paidAt = new Date();
     await paymentRepository.markPaid(payment._id, { paidAt });
     await this.activateSubscription(payment, paidAt);
-    logger.info(`Billing :: cobrança Itaú ${event.providerBillingId} paga → assinatura liberada (empresa ${payment.companyId})`);
+    logger.info(`Billing :: cobrança ${providerKey} ${event.providerBillingId} paga → assinatura liberada (empresa ${payment.companyId})`);
     return payment;
   }
 

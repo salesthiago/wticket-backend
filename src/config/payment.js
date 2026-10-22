@@ -13,9 +13,11 @@
 //   ITAU_PRIVATE_KEY_PATH  caminho do .key mTLS (PEM) já presente no servidor
 //   ITAU_WEBHOOK_SECRET    segredo p/ validar o HMAC do webhook de cobrança
 //
-//   Stripe (cartão — integração futura)
+//   Stripe (cartão — Checkout hospedado)
 //   STRIPE_SECRET_KEY
 //   STRIPE_WEBHOOK_SECRET
+//   STRIPE_SUCCESS_URL   para onde o cliente volta após pagar
+//   STRIPE_CANCEL_URL    para onde o cliente volta ao desistir
 
 import fs from 'fs';
 import logger from '../utils/logger.js';
@@ -74,8 +76,12 @@ export function getItauPixEndpoints(environment) {
 }
 
 export function getStripeEnvConfig() {
+  const frontend = process.env.FRONTEND_URL || '';
   return {
     secretKey: process.env.STRIPE_SECRET_KEY?.trim() || undefined,
-    webhookSecret: process.env.STRIPE_WEBHOOK_SECRET?.trim() || undefined
+    webhookSecret: process.env.STRIPE_WEBHOOK_SECRET?.trim() || undefined,
+    // A tela /checkout do front trata os dois retornos (confirmação / cancelamento).
+    successUrl: process.env.STRIPE_SUCCESS_URL || `${frontend}/checkout?pagamento=sucesso&session_id={CHECKOUT_SESSION_ID}`,
+    cancelUrl: process.env.STRIPE_CANCEL_URL || `${frontend}/checkout?pagamento=cancelado`
   };
 }

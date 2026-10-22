@@ -260,10 +260,13 @@ class PaymentSettingsService {
     const s = doc.stripe;
     const env = getStripeEnvConfig();
     return {
+      enabled: !!s.enabled,
       environment: s.environment || 'test',
       publishableKey: s.publishableKey || undefined,
       secretKey: decryptMaybe(s.secretKeyEnc) || env.secretKey,
-      webhookSecret: decryptMaybe(s.webhookSecretEnc) || env.webhookSecret
+      webhookSecret: decryptMaybe(s.webhookSecretEnc) || env.webhookSecret,
+      successUrl: env.successUrl,
+      cancelUrl: env.cancelUrl
     };
   }
 

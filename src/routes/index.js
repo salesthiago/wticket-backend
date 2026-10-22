@@ -57,6 +57,7 @@ router.get('/modules', moduleController.findAll);
 router.post('/companies/register', companyController.register);
 router.post('/billing/webhook', paymentController.webhook);
 router.post('/billing/webhook/itau', paymentController.itauWebhook);
+router.post('/billing/webhook/stripe', paymentController.stripeWebhook);
 // Webhook da Integração Itaú por empresa (Contas a Receber) — autentica-se
 // sozinho via HMAC (header x-itau-signature) contra o webhookSecret da empresa.
 router.post('/financial/itau/webhook/:companyId', itauFinancialWebhookController.handle);
