@@ -136,6 +136,24 @@ const TicketSchema = new mongoose.Schema({
     default: 0,
     min: 0
   },
+  // Faturamento do projeto: título (Contas a Receber) em que esta tarefa foi
+  // cobrada. Enquanto preenchido, a tarefa não entra em outro faturamento — é
+  // liberada se o título for cancelado ou excluído.
+  invoicedReceivableId: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'Receivable',
+    default: null,
+    index: true
+  },
+  invoicedAt: {
+    type: Date,
+    default: null
+  },
+  // Horas cobradas no faturamento (foto de workedHours naquele momento)
+  invoicedHours: {
+    type: Number,
+    default: null
+  },
   // Número da tarefa, gerado automaticamente a partir do número do projeto
   // (ex.: PRJ-2026-00001-01) quando o ticket é criado dentro de um projeto
   taskNumber: {

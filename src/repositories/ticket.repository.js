@@ -201,6 +201,38 @@ class TicketRepository {
     }
   }
 
+  // ─── Faturamento de projeto ───────────────────────────────────────────────
+
+  /** Tarefas do projeto pelos ids informados (para validar o faturamento). */
+  async findProjectTasksByIds({ companyId, projectId, ids }) {
+    return await Ticket.find({ _id: { $in: ids }, companyId, projectId })
+      .select('taskNumber workedHours invoicedReceivableId');
+  }
+
+  /**
+   * Marca as tarefas como faturadas no título. Só marca as que ainda estão
+   * livres (invoicedReceivableId null) — evita faturar duas vezes em pedidos
+   * concorrentes. Devolve quantas foram marcadas.
+   */
+  async markInvoiced(tasks, receivableId) {
+    const now = new Date();
+    const result = await Ticket.bulkWrite(tasks.map(t => ({
+      updateOne: {
+        filter: { _id: t._id, invoicedReceivableId: null },
+        update: { $set: { invoicedReceivableId: receivableId, invoicedAt: now, invoicedHours: Number(t.workedHours || 0) } }
+      }
+    })));
+    return result.modifiedCount;
+  }
+
+  /** Libera as tarefas do título (cancelado/excluído) para novo faturamento. */
+  async releaseInvoiced(receivableId) {
+    return await Ticket.updateMany(
+      { invoicedReceivableId: receivableId },
+      { $set: { invoicedReceivableId: null, invoicedAt: null, invoicedHours: null } }
+    );
+  }
+
   async getTicketsStats() {
     try {
       const match = { sessionName };

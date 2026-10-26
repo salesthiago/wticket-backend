@@ -109,6 +109,14 @@ class ProjectRepository {
           _id: null,
           totalTasks: { $sum: 1 },
           totalWorkedHours: { $sum: { $ifNull: ['$workedHours', 0] } },
+          // Horas já faturadas (foto do faturamento) x horas das tarefas ainda livres
+          invoicedHours: {
+            $sum: { $cond: [{ $ifNull: ['$invoicedReceivableId', false] }, { $ifNull: ['$invoicedHours', 0] }, 0] }
+          },
+          uninvoicedHours: {
+            $sum: { $cond: [{ $ifNull: ['$invoicedReceivableId', false] }, 0, { $ifNull: ['$workedHours', 0] }] }
+          },
+          invoicedTasks: { $sum: { $cond: [{ $ifNull: ['$invoicedReceivableId', false] }, 1, 0] } },
           completionSum: { $sum: '$completionWeight' }
         }
       }
@@ -118,6 +126,9 @@ class ProjectRepository {
     return {
       totalTasks,
       totalWorkedHours: result?.totalWorkedHours ?? 0,
+      invoicedHours: result?.invoicedHours ?? 0,
+      uninvoicedHours: result?.uninvoicedHours ?? 0,
+      invoicedTasks: result?.invoicedTasks ?? 0,
       completionPercentage: totalTasks > 0 ? result.completionSum / totalTasks : 0
     };
   }

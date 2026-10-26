@@ -83,10 +83,11 @@ export const findById = async (req, res) => {
 
     const stats = await projectRepository.getStats(id, companyId);
     const totalValue = stats.totalWorkedHours * (project.hourlyRate ?? 0);
+    const invoicedValue = stats.invoicedHours * (project.hourlyRate ?? 0);
 
     return res.status(200).json({
       ...project.toObject(),
-      stats: { ...stats, totalValue }
+      stats: { ...stats, totalValue, invoicedValue }
     });
   } catch (err) {
     logger.error('project findById error >>>', err);

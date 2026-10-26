@@ -1,7 +1,9 @@
+import mongoose from 'mongoose';
 import logger from '../../utils/logger.js';
 import receivableRepository from '../../repositories/financial/receivable.repository.js';
 import serviceOrderRepository from '../../repositories/service-order.repository.js';
 import projectRepository from '../../repositories/project.repository.js';
+import ticketRepository from '../../repositories/ticket.repository.js';
 import { PAYMENT_METHODS } from '../../models/financial/receivable.model.js';
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -82,7 +84,8 @@ class ReceivableService {
       billingBreakdown: data.billingBreakdown && (data.billingBreakdown.workedHours != null || data.billingBreakdown.hourlyRate != null)
         ? {
             workedHours: data.billingBreakdown.workedHours != null ? Number(data.billingBreakdown.workedHours) : null,
-            hourlyRate: data.billingBreakdown.hourlyRate != null ? Number(data.billingBreakdown.hourlyRate) : null
+            hourlyRate: data.billingBreakdown.hourlyRate != null ? Number(data.billingBreakdown.hourlyRate) : null,
+            tasks: Array.isArray(data.billingBreakdown.tasks) ? data.billingBreakdown.tasks : []
           }
         : null,
       amount: Number(data.amount),
@@ -145,7 +148,9 @@ class ReceivableService {
   }
 
   async destroy(companyId, id) {
-    return await receivableRepository.softDelete(companyId, id);
+    const doc = await receivableRepository.softDelete(companyId, id);
+    if (doc) await ticketRepository.releaseInvoiced(doc._id);
+    return doc;
   }
 
   // ─── Operações de status ─────────────────────────────────────────────────
@@ -225,6 +230,8 @@ class ReceivableService {
       changedBy: userId,
       changedAt: new Date()
     });
+    // Tarefas de projeto cobradas neste título voltam a ficar disponíveis.
+    await ticketRepository.releaseInvoiced(current._id);
     return await receivableRepository.findById(companyId, id);
   }
 
@@ -301,22 +308,15 @@ class ReceivableService {
    * Cria um título a receber a partir de um Projeto.
    * O título (descrição) é sempre o número do projeto.
    * Regras:
-   *  - Projeto não pode ter outro título ativo (não cancelado)
+   *  - Fatura só as tarefas selecionadas (data.ticketIds); o valor é a soma
+   *    das horas delas x valor/hora do projeto
+   *  - Tarefa já faturada (em título não cancelado) não entra de novo
    */
   async invoiceFromProject({ companyId, userId, projectId, data }) {
     if (!companyId) throw Object.assign(new Error('companyId é obrigatório'), { status: 422 });
 
     const project = await projectRepository.findById(projectId, { companyId });
     if (!project) throw Object.assign(new Error('Projeto não encontrado'), { status: 404 });
-
-    // Anti-duplicidade
-    const existing = await receivableRepository.findActiveByProject(companyId, projectId);
-    if (existing && existing.length > 0) {
-      throw Object.assign(
-        new Error(`Projeto já possui título ativo (${existing[0].number}). Cancele-o antes de faturar novamente.`),
-        { status: 422 }
-      );
-    }
 
     if (!data?.paymentMethod) {
       throw Object.assign(new Error('Forma de pagamento é obrigatória'), { status: 422 });
@@ -325,11 +325,33 @@ class ReceivableService {
       throw Object.assign(new Error('Data de vencimento é obrigatória'), { status: 422 });
     }
 
-    // Memória de cálculo: horas trabalhadas somadas nas tarefas x valor/hora do projeto.
-    const stats = await projectRepository.getStats(projectId, companyId);
-    const workedHours = stats.totalWorkedHours || 0;
+    // Tarefas (tickets) a faturar. Cada tarefa só pode ser faturada uma vez:
+    // ao gerar o título ela fica marcada (invoicedReceivableId) e só é
+    // liberada se o título for cancelado/excluído.
+    const ticketIds = [...new Set((Array.isArray(data?.ticketIds) ? data.ticketIds : []).map(String))];
+    if (!ticketIds.length) {
+      throw Object.assign(new Error('Selecione ao menos uma tarefa para faturar'), { status: 422 });
+    }
+    if (ticketIds.some(tid => !mongoose.isValidObjectId(tid))) {
+      throw Object.assign(new Error('Tarefa inválida'), { status: 422 });
+    }
+    const tasks = await ticketRepository.findProjectTasksByIds({ companyId, projectId, ids: ticketIds });
+    if (tasks.length !== ticketIds.length) {
+      throw Object.assign(new Error('Uma ou mais tarefas não pertencem a este projeto'), { status: 422 });
+    }
+    const alreadyInvoiced = tasks.filter(t => t.invoicedReceivableId);
+    if (alreadyInvoiced.length) {
+      throw Object.assign(
+        new Error(`Tarefa(s) já faturada(s): ${alreadyInvoiced.map(t => t.taskNumber || t._id).join(', ')}`),
+        { status: 409 }
+      );
+    }
+
+    // Memória de cálculo: horas das tarefas selecionadas x valor/hora do projeto.
+    const workedHours = tasks.reduce((sum, t) => sum + Number(t.workedHours || 0), 0);
     const hourlyRate = project.hourlyRate || 0;
     const computedAmount = workedHours * hourlyRate;
+    const billedTasks = tasks.map(t => ({ ticketId: t._id, taskNumber: t.taskNumber, hours: Number(t.workedHours || 0) }));
 
     const customerId = data?.customerId || (project.customerId?._id || project.customerId);
 
@@ -338,13 +360,13 @@ class ReceivableService {
       ? String(data.invoiceDescription)
       : stripHtml(project.description || '');
 
-    return await this.create({
+    const receivable = await this.create({
       companyId,
       userId,
       data: {
         description: project.projectNumber,
         invoiceDescription,
-        billingBreakdown: { workedHours, hourlyRate },
+        billingBreakdown: { workedHours, hourlyRate, tasks: billedTasks },
         amount: data?.amount != null ? Number(data.amount) : computedAmount,
         dueDate: data.dueDate,
         paymentMethod: data.paymentMethod,
@@ -353,6 +375,16 @@ class ReceivableService {
         notes: data?.notes || `Faturamento do projeto ${project.projectNumber}`
       }
     });
+
+    // Marca as tarefas no título. Se outra requisição faturou alguma delas no
+    // meio do caminho, desfaz tudo para não cobrar a mesma tarefa duas vezes.
+    const marked = await ticketRepository.markInvoiced(tasks, receivable._id);
+    if (marked !== tasks.length) {
+      await ticketRepository.releaseInvoiced(receivable._id);
+      await receivableRepository.softDelete(companyId, receivable._id);
+      throw Object.assign(new Error('Algumas tarefas acabaram de ser faturadas em outro título. Atualize a tela e tente novamente.'), { status: 409 });
+    }
+    return receivable;
   }
 
   async listByProject(companyId, projectId) {

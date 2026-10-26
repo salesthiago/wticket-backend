@@ -20,11 +20,19 @@ const StatusHistorySchema = new mongoose.Schema({
   changedAt: { type: Date, default: Date.now }
 }, { _id: false });
 
+// Tarefa (ticket) cobrada no título — foto do momento do faturamento.
+const BilledTaskSchema = new mongoose.Schema({
+  ticketId: { type: mongoose.Schema.Types.ObjectId, ref: 'Ticket' },
+  taskNumber: { type: String },
+  hours: { type: Number, default: 0 }
+}, { _id: false });
+
 // Detalhamento do cálculo do valor quando o título é gerado a partir de um
-// projeto: horas trabalhadas somadas nas tarefas x valor/hora do projeto.
+// projeto: horas das tarefas selecionadas x valor/hora do projeto.
 const BillingBreakdownSchema = new mongoose.Schema({
   workedHours: { type: Number, default: null },
-  hourlyRate: { type: Number, default: null }
+  hourlyRate: { type: Number, default: null },
+  tasks: { type: [BilledTaskSchema], default: [] }
 }, { _id: false });
 
 const ReceivableSchema = new mongoose.Schema({
