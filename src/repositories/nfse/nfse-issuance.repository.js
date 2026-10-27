@@ -70,6 +70,19 @@ class NfseIssuanceRepository {
     );
   }
 
+  /** Outra emissão (inclusive arquivada) já usando esta série/nDPS? */
+  async findBySerieNumber(companyId, serie, nDPS, { excludeId } = {}) {
+    const query = { companyId, serie, nDPS };
+    if (excludeId) query._id = { $ne: excludeId };
+    return await NfseIssuance.findOne(query).select('serie nDPS status isActive');
+  }
+
+  /** Maior nDPS já usado na série (0 se nenhum). */
+  async maxNumberInSerie(companyId, serie) {
+    const doc = await NfseIssuance.findOne({ companyId, serie }).sort({ nDPS: -1 }).select('nDPS');
+    return doc?.nDPS || 0;
+  }
+
   async softDelete(companyId, id) {
     if (!companyId) throw new Error('companyId is required');
     return await NfseIssuance.findOneAndUpdate(

@@ -444,7 +444,9 @@ class NfseIssuerService {
 
   /**
    * Edita os dados de uma issuance rejeitada/com erro e regenera o XML assinado.
-   * O nDPS e a série são mantidos — apenas o conteúdo do XML é atualizado.
+   * Série e nDPS podem ser alterados manualmente (patch.serie / patch.nDPS) —
+   * ex.: rejeição por numeração. Nesse caso a NfseConfig é ajustada para a
+   * sequência continuar depois do número usado.
    * Após a edição o status volta a 'rejected' aguardando nova retransmissão.
    */
   async editAndRegenerateXml({ companyId, issuanceId, patch }) {
@@ -502,6 +504,26 @@ class NfseIssuerService {
       valores = computeValues(valoresInput);
     }
 
+    // Numeração manual (série: até 5 dígitos; nDPS: até 15 dígitos — XSD v1.01)
+    const serie = patch.serie != null && patch.serie !== '' ? Number(patch.serie) : issuance.serie;
+    const nDPS = patch.nDPS != null && patch.nDPS !== '' ? Number(patch.nDPS) : issuance.nDPS;
+    if (!Number.isInteger(serie) || serie < 1 || serie > 99999) {
+      throw Object.assign(new Error('Série inválida: use um número de 1 a 99999 (máximo 5 dígitos).'), { status: 422 });
+    }
+    if (!Number.isInteger(nDPS) || nDPS < 1 || nDPS > 999999999999999) {
+      throw Object.assign(new Error('Número da DPS inválido: use um número inteiro de 1 a 15 dígitos.'), { status: 422 });
+    }
+    const numberingChanged = serie !== issuance.serie || nDPS !== issuance.nDPS;
+    if (numberingChanged) {
+      const conflict = await nfseIssuanceRepository.findBySerieNumber(companyId, serie, nDPS, { excludeId: issuance._id });
+      if (conflict) {
+        throw Object.assign(
+          new Error(`Já existe uma emissão com a série ${serie} e número ${nDPS} (status: ${conflict.status}${conflict.isActive ? '' : ', arquivada'}).`),
+          { status: 409 }
+        );
+      }
+    }
+
     // Valida campos mínimos após edição
     const prestador = issuance.prestador?.toObject?.() ?? issuance.prestador;
     const validationErrors = validateForIssuance({ config, company: { document: prestador?.document, name: prestador?.nome }, prestador, servico, valores });
@@ -509,7 +531,7 @@ class NfseIssuerService {
       throw Object.assign(new Error(validationErrors.join('; ')), { status: 422, details: validationErrors });
     }
 
-    // Regenera XML com os dados atualizados, mantendo nDPS/serie originais
+    // Regenera XML com os dados atualizados (e a numeração, se alterada)
     const regTrib = {
       opSimpNac:  config.opSimpNac,
       regApTribSN: config.regApTribSN,
@@ -521,8 +543,8 @@ class NfseIssuerService {
       tpAmb:    config.ambiente,
       tpEmit:   issuance.tpEmit,
       verAplic: config.verAplic,
-      serie:    issuance.serie,
-      nDPS:     issuance.nDPS,
+      serie,
+      nDPS,
       dCompet,
       dhEmi,
       prestador,
@@ -546,8 +568,23 @@ class NfseIssuerService {
     issuance.xmlDpsAssinado  = dpsXmlSigned;
     issuance.xmlNfseRetorno  = null;
     issuance.mensagensRetorno = [];
-    issuance.pushStatus('rejected', 'Dados corrigidos — XML regenerado. Pronto para retransmissão.');
+    if (numberingChanged) {
+      const before = `${issuance.serie}/${issuance.nDPS}`;
+      issuance.serie = serie;
+      issuance.nDPS = nDPS;
+      issuance.numeroNfse = String(nDPS);
+      issuance.pushStatus('rejected', `Numeração alterada manualmente: ${before} → ${serie}/${nDPS}. XML regenerado. Pronto para retransmissão.`);
+    } else {
+      issuance.pushStatus('rejected', 'Dados corrigidos — XML regenerado. Pronto para retransmissão.');
+    }
     await issuance.save();
+
+    // A série passa a ser a da empresa e o próximo número segue o maior usado.
+    if (numberingChanged) {
+      const maxUsed = await nfseIssuanceRepository.maxNumberInSerie(companyId, serie);
+      await nfseConfigRepository.syncNumbering(companyId, { serie, nextNumber: Math.max(maxUsed, nDPS) + 1 });
+      logger.info(`NfseIssuer :: numeração manual ${serie}/${nDPS} (empresa ${companyId}); config sincronizada`);
+    }
 
     return issuance;
   }

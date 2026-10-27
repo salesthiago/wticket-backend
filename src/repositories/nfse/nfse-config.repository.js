@@ -42,6 +42,22 @@ class NfseConfigRepository {
     );
   }
 
+  /**
+   * Ajusta a numeração após uma série/nDPS definidos manualmente (correção de
+   * emissão rejeitada): a série vira a série atual da empresa e o próximo
+   * número segue a partir do maior já usado nela. Na mesma série nunca volta
+   * para trás ($max), para não gerar DPS repetida; ao trocar de série a
+   * sequência passa a ser a da nova série.
+   */
+  async syncNumbering(companyId, { serie, nextNumber }) {
+    const config = await NfseConfig.findOne({ companyId }).select('serie');
+    if (!config) return null;
+    const update = config.serie === serie
+      ? { $max: { proximoNumeroDps: nextNumber } }
+      : { $set: { serie, proximoNumeroDps: nextNumber } };
+    return await NfseConfig.findOneAndUpdate({ companyId }, update, { new: true });
+  }
+
   async allocateNextDps(companyId) {
     return await NfseConfig.allocateNextDps(companyId);
   }
