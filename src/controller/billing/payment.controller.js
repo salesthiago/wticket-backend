@@ -66,12 +66,15 @@ export const getMethods = async (_req, res) => {
 // GET /api/billing/:id → status da cobrança (lido do nosso registro, atualizado pelo webhook)
 export const getStatus = async (req, res) => {
   try {
-    const payment = await subscriptionService.getPayment(req.params.id);
+    let payment = await subscriptionService.getPayment(req.params.id);
     if (!payment) return res.status(404).json({ message: 'Cobrança não encontrada' });
 
     const isSuperAdmin = req.user?.role === 'super_admin';
     const isOwn = String(payment.companyId) === String(req.user?.companyId);
     if (!isSuperAdmin && !isOwn) return res.status(403).json({ message: 'Forbidden' });
+
+    // Boleto Inter emitido mas ainda em processamento: completa a linha digitável.
+    payment = await subscriptionService.refreshInterBoleto(payment);
 
     return res.json({
       id: payment._id,
@@ -79,9 +82,30 @@ export const getStatus = async (req, res) => {
       amount: payment.amount,
       moduleCodes: payment.moduleCodes,
       url: payment.checkoutUrl,
+      pix: payment.pix || null,
+      boleto: payment.boleto || null,
       paidAt: payment.paidAt,
       providerBillingId: payment.providerBillingId
     });
+  } catch (err) {
+    return sendError(res, err);
+  }
+};
+
+// GET /api/billing/:id/boleto.pdf → PDF do boleto (Inter)
+export const getBoletoPdf = async (req, res) => {
+  try {
+    const payment = await subscriptionService.getPayment(req.params.id);
+    if (!payment) return res.status(404).json({ message: 'Cobrança não encontrada' });
+
+    const isSuperAdmin = req.user?.role === 'super_admin';
+    const isOwn = String(payment.companyId) === String(req.user?.companyId);
+    if (!isSuperAdmin && !isOwn) return res.status(403).json({ message: 'Forbidden' });
+
+    const pdf = await subscriptionService.getBoletoPdf(payment);
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', `inline; filename="boleto-${payment.boleto?.seuNumero || payment._id}.pdf"`);
+    return res.send(pdf);
   } catch (err) {
     return sendError(res, err);
   }
@@ -152,6 +176,31 @@ export const itauWebhook = async (req, res) => {
       return res.status(401).json({ message: 'invalid signature' });
     }
     logger.error('Billing :: erro ao processar webhook Itaú', err);
+    return res.status(500).json({ message: 'webhook processing failed' });
+  }
+};
+
+// POST /api/billing/webhook/inter/:token[/pix]  (público — chamado pelo Inter)
+// O token do path é validado no provider.parseWebhook; cada evento é
+// reconfirmado na API do Inter antes de liberar/renovar a assinatura.
+export const interWebhook = async (req, res) => {
+  try {
+    const config = await paymentSettingsService.getConfigFor('inter');
+    const provider = registry.get('inter');
+    const events = provider.parseWebhook(req.rawBody, req.headers, req.params, config);
+    for (const event of events) {
+      const confirmed = await provider.confirmEvent(event, config);
+      if (confirmed) await subscriptionService.handleProviderWebhook('inter', confirmed);
+    }
+    return res.status(200).json({ received: true });
+  } catch (err) {
+    const status = err?.status || 500;
+    if (status === 401) {
+      logger.warn('Billing :: webhook Inter rejeitado (token inválido)');
+      return res.status(401).json({ message: 'invalid token' });
+    }
+    // 500 faz o Inter reenviar — bom para falhas transitórias (ex.: consulta de confirmação).
+    logger.error('Billing :: erro ao processar webhook Inter', err);
     return res.status(500).json({ message: 'webhook processing failed' });
   }
 };

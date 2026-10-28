@@ -13,6 +13,15 @@
 //   ITAU_PRIVATE_KEY_PATH  caminho do .key mTLS (PEM) já presente no servidor
 //   ITAU_WEBHOOK_SECRET    segredo p/ validar o HMAC do webhook de cobrança
 //
+//   Banco Inter (Pix imediato + boleto com Pix / BolePix)
+//   INTER_ENV               'sandbox' | 'production' (default: sandbox)
+//   INTER_CLIENT_ID
+//   INTER_CLIENT_SECRET
+//   INTER_CERTIFICATE_PATH  caminho do .crt (PEM) gerado na integração do Inter
+//   INTER_PRIVATE_KEY_PATH  caminho do .key (PEM)
+//   INTER_CONTA_CORRENTE    nº da conta (header x-conta-corrente; só p/ quem tem +1 conta)
+//   INTER_PIX_KEY           chave Pix da conta (obrigatória p/ o método 'pix')
+//
 //   Stripe (cartão — Checkout hospedado)
 //   STRIPE_SECRET_KEY
 //   STRIPE_WEBHOOK_SECRET
@@ -72,6 +81,35 @@ export function getItauPixEndpoints(environment) {
     authUrl: (process.env.ITAU_PIX_AUTH_URL || base.authUrl).replace(/\/+$/, ''),
     apiUrl: (process.env.ITAU_PIX_API_URL || base.apiUrl).replace(/\/+$/, ''),
     tokenPath: '/api/oauth/token'
+  };
+}
+
+export function getInterEnvConfig() {
+  const env = (process.env.INTER_ENV || 'sandbox').trim();
+  return {
+    environment: env === 'production' ? 'production' : 'sandbox',
+    clientId: process.env.INTER_CLIENT_ID?.trim() || undefined,
+    clientSecret: process.env.INTER_CLIENT_SECRET?.trim() || undefined,
+    certificatePem: readFileMaybe(process.env.INTER_CERTIFICATE_PATH?.trim()),
+    privateKeyPem: readFileMaybe(process.env.INTER_PRIVATE_KEY_PATH?.trim()),
+    contaCorrente: process.env.INTER_CONTA_CORRENTE?.trim() || undefined,
+    pixKey: process.env.INTER_PIX_KEY?.trim() || undefined
+  };
+}
+
+// Host da API PJ do Inter (OAuth, Pix e Cobrança v3 vivem no mesmo host).
+//   INTER_API_URL   sobrescreve o host (útil p/ apontar p/ um mock local)
+const INTER_DEFAULTS = {
+  sandbox: 'https://cdpj-sandbox.partners.uatinter.co',
+  production: 'https://cdpj.partners.bancointer.com.br'
+};
+
+export function getInterEndpoints(environment) {
+  const env = environment === 'production' ? 'production' : 'sandbox';
+  return {
+    environment: env,
+    apiUrl: (process.env.INTER_API_URL || INTER_DEFAULTS[env]).replace(/\/+$/, ''),
+    tokenPath: '/oauth/v2/token'
   };
 }
 

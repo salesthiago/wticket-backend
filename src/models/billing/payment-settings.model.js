@@ -1,11 +1,11 @@
 import mongoose from 'mongoose';
 
 // Chaves dos provedores de pagamento suportados pelo billing.
-export const PAYMENT_PROVIDER_KEYS = ['abacatepay', 'itau', 'stripe'];
+export const PAYMENT_PROVIDER_KEYS = ['abacatepay', 'itau', 'inter', 'stripe'];
 
-// Métodos de pagamento oferecidos. 'pix' vai pelo Itaú; cartão pelo AbacatePay
-// (hoje) ou Stripe (futuro).
-export const BILLING_PAYMENT_METHODS = ['pix', 'credit_card', 'debit_card'];
+// Métodos de pagamento oferecidos. 'pix' vai pelo Itaú ou Inter; 'boleto' (com
+// Pix) pelo Inter; cartão pelo AbacatePay ou Stripe.
+export const BILLING_PAYMENT_METHODS = ['pix', 'boleto', 'credit_card', 'debit_card'];
 
 // Um método habilitável + qual provedor o processa (mapa de roteamento).
 const MethodRouteSchema = new mongoose.Schema({
@@ -14,7 +14,7 @@ const MethodRouteSchema = new mongoose.Schema({
   providerKey: { type: String, enum: PAYMENT_PROVIDER_KEYS, required: true }
 }, { _id: false });
 
-// Certificado mTLS do Itaú (PEM). O conteúdo fica cifrado em disco; aqui só
+// Certificado mTLS do Itaú/Inter (PEM). O conteúdo fica cifrado em disco; aqui só
 // metadados + o caminho. Espelha nfse-config.model.js > CertificateSchema.
 const ItauCertificateSchema = new mongoose.Schema({
   filename: { type: String, trim: true },
@@ -49,6 +49,24 @@ const ItauConfigSchema = new mongoose.Schema({
   privateKey: { type: ItauPrivateKeySchema, default: null }
 }, { _id: false });
 
+const InterConfigSchema = new mongoose.Schema({
+  enabled: { type: Boolean, default: false },
+  environment: { type: String, enum: ['sandbox', 'production'], default: 'sandbox' },
+  clientId: { type: String, trim: true },
+  clientSecretEnc: { type: String },          // AES-GCM (crypto.util)
+  // Token secreto que vai no path da URL de webhook (o Inter não assina o corpo).
+  webhookTokenEnc: { type: String },
+  webhookRegisteredAt: { type: Date },
+  // Só p/ quem tem mais de uma conta no Inter (header x-conta-corrente).
+  contaCorrente: { type: String, trim: true },
+  // Chave Pix da conta — obrigatória p/ o método 'pix' (cob imediata).
+  pixKey: { type: String, trim: true },
+  // Dias até o vencimento do boleto emitido na cobrança da assinatura.
+  boletoDueDays: { type: Number, default: 3, min: 1, max: 30 },
+  certificate: { type: ItauCertificateSchema, default: null },
+  privateKey: { type: ItauPrivateKeySchema, default: null }
+}, { _id: false });
+
 const StripeConfigSchema = new mongoose.Schema({
   enabled: { type: Boolean, default: false },
   environment: { type: String, enum: ['test', 'live'], default: 'test' },
@@ -69,6 +87,7 @@ const PaymentSettingsSchema = new mongoose.Schema({
   methods: { type: [MethodRouteSchema], default: [] },
   abacatepay: { type: AbacatePayConfigSchema, default: () => ({}) },
   itau: { type: ItauConfigSchema, default: () => ({}) },
+  inter: { type: InterConfigSchema, default: () => ({}) },
   stripe: { type: StripeConfigSchema, default: () => ({}) },
   updatedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User' }
 }, { timestamps: true });

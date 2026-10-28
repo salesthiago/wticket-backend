@@ -18,7 +18,7 @@ function addDays(base, days) {
 
 // Métodos aceitos ao gerar cobrança pelo painel: os dois primeiros passam pelo
 // roteamento normal de provedores (PaymentSettings); 'manual' só registra.
-export const CHARGE_METHODS = ['pix', 'credit_card', 'manual'];
+export const CHARGE_METHODS = ['pix', 'boleto', 'credit_card', 'manual'];
 
 /**
  * Financeiro da PLATAFORMA (super_admin): situação de cobrança de cada empresa
@@ -146,7 +146,8 @@ class PlatformBillingService {
     if (!company) throw httpError('Empresa não encontrada', 404);
 
     if (method !== 'manual') {
-      const result = await subscriptionService.createCheckout({ companyId, method });
+      // Boleto já nasce com o vencimento informado; nos demais só fica registrado.
+      const result = await subscriptionService.createCheckout({ companyId, method, dueDate });
       const updates = { createdBy: userId };
       if (dueDate) updates.dueDate = dueDate;
       if (description) updates.description = description;

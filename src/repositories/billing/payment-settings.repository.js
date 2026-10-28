@@ -4,9 +4,10 @@ import PaymentSettings, {
 } from '../../models/billing/payment-settings.model.js';
 
 // Roteamento padrão: cartão pelo AbacatePay (comportamento atual), PIX pelo
-// Itaú (desabilitado até configurar).
+// Itaú e boleto pelo Inter (desabilitados até configurar).
 const DEFAULT_METHOD_ROUTES = [
   { method: 'pix', enabled: false, providerKey: 'itau' },
+  { method: 'boleto', enabled: false, providerKey: 'inter' },
   { method: 'credit_card', enabled: true, providerKey: 'abacatepay' },
   { method: 'debit_card', enabled: false, providerKey: 'abacatepay' }
 ];
@@ -19,6 +20,13 @@ class PaymentSettingsRepository {
     } else if (!doc.methods || doc.methods.length === 0) {
       doc.methods = DEFAULT_METHOD_ROUTES;
       await doc.save();
+    } else {
+      // Métodos adicionados depois da criação do doc (ex.: boleto) entram desabilitados.
+      const missing = DEFAULT_METHOD_ROUTES.filter(d => !doc.methods.some(m => m.method === d.method));
+      if (missing.length) {
+        doc.methods.push(...missing);
+        await doc.save();
+      }
     }
     return doc;
   }
@@ -38,16 +46,17 @@ class PaymentSettingsRepository {
     return doc;
   }
 
-  async setItauCertificate(certificate) {
+  // providerKey: 'itau' | 'inter' (ambos usam certificado mTLS).
+  async setCertificate(providerKey, certificate) {
     const doc = await this.getOrCreate();
-    doc.itau.certificate = certificate;
+    doc[providerKey].certificate = certificate;
     await doc.save();
     return doc;
   }
 
-  async setItauPrivateKey(privateKey) {
+  async setPrivateKey(providerKey, privateKey) {
     const doc = await this.getOrCreate();
-    doc.itau.privateKey = privateKey;
+    doc[providerKey].privateKey = privateKey;
     await doc.save();
     return doc;
   }

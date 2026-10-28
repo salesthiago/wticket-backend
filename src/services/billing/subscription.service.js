@@ -8,6 +8,7 @@ import { getConfig } from '../../config/abacatepay.js';
 import * as abacatepay from './abacatepay.service.js';
 import paymentSettingsService from './payment-settings.service.js';
 import registry from './providers/index.js';
+import { obterPdfBoleto } from './providers/inter-api.js';
 
 function httpError(message, status) {
   return Object.assign(new Error(message), { status });
@@ -30,6 +31,7 @@ function publicPayment(payment) {
     status: payment.status,
     checkoutUrl: payment.checkoutUrl || null,
     pix: payment.pix || null,
+    boleto: payment.boleto || null,
     createdAt: payment.createdAt
   };
 }
@@ -104,7 +106,7 @@ class SubscriptionService {
    * @param {object} [p.payer] dados do pagador p/ o customer (name,email,phone,taxId)
    * @returns {Promise<{paymentId,url,amount,status,providerBillingId,moduleCodes,planId}>}
    */
-  async createCheckout({ companyId, planId, payer, completionUrl, returnUrl, method }) {
+  async createCheckout({ companyId, planId, payer, completionUrl, returnUrl, method, dueDate }) {
     if (!companyId) throw httpError('companyId é obrigatório', 422);
 
     const company = await companyRepository.findById(companyId);
@@ -131,6 +133,9 @@ class SubscriptionService {
 
     if (route.providerKey === 'itau') {
       return this._createItauCheckout({ company, plan, route });
+    }
+    if (route.providerKey === 'inter') {
+      return this._createInterCheckout({ company, plan, route, method: method || 'pix', dueDate });
     }
     if (route.providerKey === 'stripe') {
       return this._createStripeCheckout({ company, plan, route, completionUrl, returnUrl });
@@ -254,6 +259,101 @@ class SubscriptionService {
     };
   }
 
+  // ─── Checkout via Inter (Pix / boleto com Pix) ─────────────────────────────
+
+  /**
+   * Cria a cobrança no Inter (Pix imediato ou BolePix, conforme o método
+   * escolhido pela empresa) e persiste o Payment local. Como no Itaú, não há
+   * página hospedada — o front exibe o QR / linha digitável.
+   */
+  async _createInterCheckout({ company, plan, route, method, dueDate }) {
+    const codes = [...plan.moduleCodes];
+    const periodDays = cycleToDays(plan.cycle);
+    await this._ensureModulesAttached(company, codes);
+
+    const charge = await registry.get('inter').createCharge(
+      {
+        companyId: String(company._id),
+        planId: String(plan._id),
+        amount: Number(plan.price || 0),
+        method,
+        periodDays,
+        moduleCodes: codes,
+        dueDate,
+        description: `Assinatura WTicket — ${plan.name}`,
+        payer: {
+          name: company.name,
+          email: company.email,
+          phone: company.phone,
+          taxId: company.document,
+          address: company.address
+        }
+      },
+      route.config
+    );
+
+    const payment = await paymentRepository.create({
+      companyId: company._id,
+      planId: plan._id,
+      provider: 'inter',
+      providerBillingId: charge.providerBillingId,
+      kind: 'subscription',
+      amount: charge.amount,
+      moduleCodes: codes,
+      periodDays,
+      status: 'pending',
+      dueDate: charge.boleto?.dueDate,
+      pix: charge.pix || null,
+      boleto: charge.boleto || null,
+      customer: { name: company.name, email: company.email, phone: company.phone, taxId: company.document },
+      metadata: { environment: route.config?.environment, method }
+    });
+
+    logger.info(`Billing :: cobrança Inter (${method}) ${charge.providerBillingId} criada p/ empresa ${company._id} (plano ${plan.name})`);
+
+    return {
+      paymentId: payment._id,
+      provider: 'inter',
+      pix: payment.pix,
+      boleto: payment.boleto,
+      amount: payment.amount,
+      status: payment.status,
+      providerBillingId: payment.providerBillingId,
+      moduleCodes: codes,
+      planId: plan._id
+    };
+  }
+
+  /**
+   * Boleto Inter emitido cuja linha digitável ainda não tinha saído no checkout
+   * (emissão assíncrona): consulta o Inter e completa o Payment. Best-effort —
+   * devolve o payment como estiver se ainda não estiver pronto ou der erro.
+   */
+  async refreshInterBoleto(payment) {
+    if (payment?.provider !== 'inter' || !payment.boleto || payment.boleto.linhaDigitavel) return payment;
+    if (payment.status !== 'pending') return payment;
+    try {
+      const config = await paymentSettingsService.getConfigFor('inter');
+      const done = await registry.get('inter').refreshBoleto(payment.boleto.codigoSolicitacao, config);
+      if (!done) return payment;
+      const boleto = { ...payment.boleto.toObject(), ...done.boleto };
+      const pix = done.pix ? { ...done.pix, expiresAt: payment.boleto.dueDate } : payment.pix;
+      return await paymentRepository.update(payment._id, { boleto, pix });
+    } catch (err) {
+      logger.warn(`Billing :: falha ao completar boleto Inter ${payment.providerBillingId}: ${err.message}`);
+      return payment;
+    }
+  }
+
+  /** PDF do boleto (Inter). */
+  async getBoletoPdf(payment) {
+    if (payment?.provider !== 'inter' || !payment.boleto?.codigoSolicitacao) {
+      throw httpError('Esta cobrança não tem boleto', 404);
+    }
+    const config = await paymentSettingsService.getConfigFor('inter');
+    return obterPdfBoleto(config, payment.boleto.codigoSolicitacao);
+  }
+
   // ─── Checkout via Stripe (cartão) ─────────────────────────────────────────
 
   /**
@@ -315,7 +415,7 @@ class SubscriptionService {
 
   /**
    * Webhook normalizado de provedor ({ providerBillingId, status, raw }) —
-   * usado por Itaú e Stripe. Idempotente pelo providerBillingId.
+   * usado por Itaú, Inter e Stripe. Idempotente pelo providerBillingId.
    */
   async handleProviderWebhook(providerKey, event) {
     if (!event?.providerBillingId) {
@@ -526,7 +626,11 @@ class SubscriptionService {
    */
   async ensureChargeForCompany(company) {
     const pending = await paymentRepository.findLatestPendingForCompany(company._id);
-    if (pending) return pending;
+    // Pix imediato vencido (sem boleto) não é mais pagável — o PSP não avisa a
+    // expiração por webhook, então expira aqui e gera uma cobrança nova.
+    const pixExpired = pending?.pix?.expiresAt && !pending.boleto && new Date(pending.pix.expiresAt) <= new Date();
+    if (pending && !pixExpired) return pending;
+    if (pixExpired) await paymentRepository.update(pending._id, { status: 'expired' });
 
     try {
       const result = await this.createCheckout({ companyId: company._id, method: 'pix' });

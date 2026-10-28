@@ -19,9 +19,9 @@ export const get = async (req, res) => {
 // PUT /api/billing/settings  (super-admin)
 export const update = async (req, res) => {
   try {
-    const { methods, abacatepay, itau, stripe } = req.body || {};
+    const { methods, abacatepay, itau, inter, stripe } = req.body || {};
     const saved = await paymentSettingsService.save(
-      { methods, abacatepay, itau, stripe },
+      { methods, abacatepay, itau, inter, stripe },
       req.user?.sub || req.user?.id
     );
     return res.json(saved);
@@ -30,19 +30,29 @@ export const update = async (req, res) => {
   }
 };
 
-// POST /api/billing/settings/itau/certificate  (multipart: file)
+// POST /api/billing/settings/:provider/certificate  (multipart: file) — itau | inter
 export const uploadCertificate = async (req, res) => {
   try {
-    return res.json(await paymentSettingsService.uploadItauCertificate(req.file));
+    return res.json(await paymentSettingsService.uploadCertificate(req.params.provider, req.file));
   } catch (err) {
     return sendError(res, err);
   }
 };
 
-// POST /api/billing/settings/itau/private-key  (multipart: file)
+// POST /api/billing/settings/:provider/private-key  (multipart: file) — itau | inter
 export const uploadPrivateKey = async (req, res) => {
   try {
-    return res.json(await paymentSettingsService.uploadItauPrivateKey(req.file));
+    return res.json(await paymentSettingsService.uploadPrivateKey(req.params.provider, req.file));
+  } catch (err) {
+    return sendError(res, err);
+  }
+};
+
+// POST /api/billing/settings/inter/webhook → cadastra a URL de webhook no Inter
+export const registerInterWebhook = async (req, res) => {
+  try {
+    const baseUrl = process.env.API_URL || `${req.protocol}://${req.get('host')}`;
+    return res.json(await paymentSettingsService.registerInterWebhooks(baseUrl, req.user?.sub || req.user?.id));
   } catch (err) {
     return sendError(res, err);
   }

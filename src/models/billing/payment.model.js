@@ -16,13 +16,24 @@ const CustomerSchema = new mongoose.Schema({
   taxId: { type: String, trim: true }
 }, { _id: false });
 
-// Dados da cobrança Pix (provider 'itau'). Não há página hospedada — o front
+// Dados da cobrança Pix (provider 'itau' / 'inter'). Não há página hospedada — o front
 // exibe o QR / copia-e-cola.
 const PixSchema = new mongoose.Schema({
   qrCode: { type: String, trim: true },
   copyPaste: { type: String, trim: true },
   txid: { type: String, trim: true },
   expiresAt: { type: Date }
+}, { _id: false });
+
+// Boleto com Pix (provider 'inter', método 'boleto'). O `pix` do mesmo Payment
+// traz o copia-e-cola do BolePix.
+const BoletoSchema = new mongoose.Schema({
+  codigoSolicitacao: { type: String, trim: true },
+  seuNumero: { type: String, trim: true },
+  nossoNumero: { type: String, trim: true },
+  linhaDigitavel: { type: String, trim: true },
+  codigoBarras: { type: String, trim: true },
+  dueDate: { type: Date }
 }, { _id: false });
 
 // Representa uma cobrança gerada num provedor de pagamento (hoje: AbacatePay)
@@ -39,7 +50,7 @@ const PaymentSchema = new mongoose.Schema({
   planId: { type: mongoose.Schema.Types.ObjectId, ref: 'Plan' },
   // 'manual' = cobrança lançada pelo super_admin no painel da plataforma, recebida
   // fora dos provedores (transferência, boleto avulso...) e baixada manualmente.
-  provider: { type: String, enum: ['abacatepay', 'itau', 'stripe', 'manual'], default: 'abacatepay', index: true },
+  provider: { type: String, enum: ['abacatepay', 'itau', 'inter', 'stripe', 'manual'], default: 'abacatepay', index: true },
   // ID da cobrança no provedor (ex.: bill_xxxx). Único quando preenchido
   // (índice unique+sparse declarado abaixo via schema.index).
   providerBillingId: { type: String },
@@ -59,8 +70,10 @@ const PaymentSchema = new mongoose.Schema({
   // Link hospedado de checkout (AbacatePay) para onde o cliente é enviado.
   checkoutUrl: { type: String, trim: true },
   customer: { type: CustomerSchema, default: {} },
-  // Preenchido quando provider === 'itau'.
+  // Preenchido quando provider === 'itau' ou 'inter'.
   pix: { type: PixSchema, default: null },
+  // Preenchido quando provider === 'inter' e o método é boleto.
+  boleto: { type: BoletoSchema, default: null },
   paidAt: { type: Date },
   // Estorno registrado pelo super_admin. O reembolso junto ao provedor
   // (AbacatePay/Itaú) é feito no painel do provedor — aqui fica o registro e a
